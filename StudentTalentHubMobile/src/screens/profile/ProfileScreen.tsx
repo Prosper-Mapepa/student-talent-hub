@@ -283,18 +283,32 @@ const ProfileScreen: React.FC = () => {
     }
   };
 
+  const [passwordErrors, setPasswordErrors] = useState<{
+    currentPassword?: string;
+    newPassword?: string;
+    confirmPassword?: string;
+  }>({});
+
   const handleChangePassword = async () => {
+    // Clear previous errors
+    setPasswordErrors({});
+
+    // Validate all fields are filled
     if (!passwordForm.currentPassword || !passwordForm.newPassword || !passwordForm.confirmPassword) {
       showToast('Please fill in all fields', 'error');
       return;
     }
 
+    // Validate passwords match
     if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setPasswordErrors({ confirmPassword: 'New passwords do not match' });
       showToast('New passwords do not match', 'error');
       return;
     }
 
+    // Validate password length
     if (passwordForm.newPassword.length < 8) {
+      setPasswordErrors({ newPassword: 'Password must be at least 8 characters' });
       showToast('Password must be at least 8 characters', 'error');
       return;
     }
@@ -302,6 +316,7 @@ const ProfileScreen: React.FC = () => {
     // Validate password requirements (uppercase, lowercase, number, special char)
     const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
     if (!passwordRegex.test(passwordForm.newPassword)) {
+      setPasswordErrors({ newPassword: 'Password must contain uppercase, lowercase, number, and special character (@$!%*?&)' });
       showToast('Password must contain uppercase, lowercase, number, and special character (@$!%*?&)', 'error');
       return;
     }
@@ -310,18 +325,40 @@ const ProfileScreen: React.FC = () => {
     try {
       await apiService.changePassword(passwordForm.currentPassword, passwordForm.newPassword);
       showToast('Password changed successfully!', 'success');
+      setPasswordErrors({});
       setShowChangePasswordModal(false);
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setShowCurrentPassword(false);
+      setShowNewPassword(false);
+      setShowConfirmPassword(false);
     } catch (error: any) {
-      const errorMessage = error.message || 'Failed to change password';
-      showToast(errorMessage, 'error');
+      // Extract error message from response
+      let errorMessage = 'Failed to change password';
       
-      // If authentication failed, suggest re-login
-      if (errorMessage.includes('logged in') || errorMessage.includes('Authentication failed')) {
-        // Optionally navigate to login or show a more helpful message
-        setTimeout(() => {
-          showToast('Please log out and log back in, then try again', 'info');
-        }, 2000);
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      // Handle specific error cases
+      if (errorMessage.toLowerCase().includes('current password') || 
+          errorMessage.toLowerCase().includes('invalid') ||
+          error.response?.status === 401) {
+        setPasswordErrors({ currentPassword: 'Current password is incorrect' });
+        showToast('Current password is incorrect', 'error');
+      } else if (errorMessage.toLowerCase().includes('password') && errorMessage.toLowerCase().includes('match')) {
+        setPasswordErrors({ confirmPassword: 'New passwords do not match' });
+        showToast(errorMessage, 'error');
+      } else {
+        showToast(errorMessage, 'error');
+        
+        // If authentication failed, suggest re-login
+        if (errorMessage.includes('logged in') || errorMessage.includes('Authentication failed')) {
+          setTimeout(() => {
+            showToast('Please log out and log back in, then try again', 'info');
+          }, 2000);
+        }
       }
     } finally {
       setChangingPassword(false);
@@ -957,6 +994,7 @@ const ProfileScreen: React.FC = () => {
               setShowCurrentPassword(false);
               setShowNewPassword(false);
               setShowConfirmPassword(false);
+              setPasswordErrors({});
             }}>
               <Ionicons name="close" size={24} color="#6b7280" />
             </TouchableOpacity>
@@ -969,11 +1007,16 @@ const ProfileScreen: React.FC = () => {
           >
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Current Password</Text>
-              <View style={styles.passwordInputContainer}>
+              <View style={[styles.passwordInputContainer, passwordErrors.currentPassword && styles.inputError]}>
                 <TextInput
-                  style={[styles.input, styles.passwordInput]}
+                  style={[styles.input, styles.passwordInput, passwordErrors.currentPassword && styles.inputErrorBorder]}
                   value={passwordForm.currentPassword}
-                  onChangeText={(text) => setPasswordForm({ ...passwordForm, currentPassword: text })}
+                  onChangeText={(text) => {
+                    setPasswordForm({ ...passwordForm, currentPassword: text });
+                    if (passwordErrors.currentPassword) {
+                      setPasswordErrors({ ...passwordErrors, currentPassword: undefined });
+                    }
+                  }}
                   placeholder="Enter current password"
                   secureTextEntry={!showCurrentPassword}
                   autoCapitalize="none"
@@ -989,14 +1032,22 @@ const ProfileScreen: React.FC = () => {
                   />
                 </TouchableOpacity>
               </View>
+              {passwordErrors.currentPassword && (
+                <Text style={styles.errorText}>{passwordErrors.currentPassword}</Text>
+              )}
             </View>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>New Password</Text>
-              <View style={styles.passwordInputContainer}>
+              <View style={[styles.passwordInputContainer, passwordErrors.newPassword && styles.inputError]}>
                 <TextInput
-                  style={[styles.input, styles.passwordInput]}
+                  style={[styles.input, styles.passwordInput, passwordErrors.newPassword && styles.inputErrorBorder]}
                   value={passwordForm.newPassword}
-                  onChangeText={(text) => setPasswordForm({ ...passwordForm, newPassword: text })}
+                  onChangeText={(text) => {
+                    setPasswordForm({ ...passwordForm, newPassword: text });
+                    if (passwordErrors.newPassword) {
+                      setPasswordErrors({ ...passwordErrors, newPassword: undefined });
+                    }
+                  }}
                   placeholder="Enter new password"
                   secureTextEntry={!showNewPassword}
                   autoCapitalize="none"
@@ -1012,14 +1063,22 @@ const ProfileScreen: React.FC = () => {
                   />
                 </TouchableOpacity>
               </View>
+              {passwordErrors.newPassword && (
+                <Text style={styles.errorText}>{passwordErrors.newPassword}</Text>
+              )}
             </View>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Confirm New Password</Text>
-              <View style={styles.passwordInputContainer}>
+              <View style={[styles.passwordInputContainer, passwordErrors.confirmPassword && styles.inputError]}>
                 <TextInput
-                  style={[styles.input, styles.passwordInput]}
+                  style={[styles.input, styles.passwordInput, passwordErrors.confirmPassword && styles.inputErrorBorder]}
                   value={passwordForm.confirmPassword}
-                  onChangeText={(text) => setPasswordForm({ ...passwordForm, confirmPassword: text })}
+                  onChangeText={(text) => {
+                    setPasswordForm({ ...passwordForm, confirmPassword: text });
+                    if (passwordErrors.confirmPassword) {
+                      setPasswordErrors({ ...passwordErrors, confirmPassword: undefined });
+                    }
+                  }}
                   placeholder="Confirm new password"
                   secureTextEntry={!showConfirmPassword}
                   autoCapitalize="none"
@@ -1035,6 +1094,9 @@ const ProfileScreen: React.FC = () => {
                   />
                 </TouchableOpacity>
               </View>
+              {passwordErrors.confirmPassword && (
+                <Text style={styles.errorText}>{passwordErrors.confirmPassword}</Text>
+              )}
             </View>
           </ScrollView>
 
@@ -1614,6 +1676,18 @@ const styles = StyleSheet.create({
     right: 12,
     padding: 4,
     zIndex: 1,
+  },
+  errorText: {
+    color: '#EF4444',
+    fontSize: 12,
+    marginTop: 4,
+    marginLeft: 4,
+  },
+  inputError: {
+    borderColor: '#EF4444',
+  },
+  inputErrorBorder: {
+    borderColor: '#EF4444',
   },
   textArea: {
     height: 80,

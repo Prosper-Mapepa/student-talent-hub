@@ -185,6 +185,12 @@ class ApiService {
       console.error('Error changing password:', error);
       // Don't clear token for password change failures - user might need to retry
       if (error.response?.status === 401) {
+        // Check if it's a wrong password error
+        const errorMessage = error.response?.data?.message || '';
+        if (errorMessage.toLowerCase().includes('current password') || 
+            errorMessage.toLowerCase().includes('invalid')) {
+          throw new Error('Current password is incorrect');
+        }
         throw new Error('Authentication failed. Please log in again to change your password.');
       }
       throw new Error(error.response?.data?.message || error.message || 'Failed to change password');
