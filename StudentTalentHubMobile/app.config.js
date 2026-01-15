@@ -39,6 +39,24 @@ export default {
       edgeToEdgeEnabled: true,
       package: "com.prospermap.StudentTalentHubMobile",
       versionCode: 1,
+      intentFilters: [
+        {
+          action: "VIEW",
+          autoVerify: true,
+          data: [
+            {
+              scheme: "https",
+              host: "cmutalenthub.netlify.app",
+              pathPrefix: "/reset-password",
+            },
+            {
+              scheme: "cmutalenthub",
+              host: "reset-password",
+            },
+          ],
+          category: ["BROWSABLE", "DEFAULT"],
+        },
+      ],
       permissions: [
         "CAMERA",
         "RECORD_AUDIO",

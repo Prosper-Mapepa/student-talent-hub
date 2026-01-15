@@ -79,6 +79,9 @@ const ProfileScreen: React.FC = () => {
     newPassword: '',
     confirmPassword: '',
   });
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   useEffect(() => {
     if (user?.role === UserRole.STUDENT) {
@@ -951,6 +954,9 @@ const ProfileScreen: React.FC = () => {
             <TouchableOpacity onPress={() => {
               setShowChangePasswordModal(false);
               setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+              setShowCurrentPassword(false);
+              setShowNewPassword(false);
+              setShowConfirmPassword(false);
             }}>
               <Ionicons name="close" size={24} color="#6b7280" />
             </TouchableOpacity>
@@ -963,36 +969,72 @@ const ProfileScreen: React.FC = () => {
           >
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Current Password</Text>
-              <TextInput
-                style={styles.input}
-                value={passwordForm.currentPassword}
-                onChangeText={(text) => setPasswordForm({ ...passwordForm, currentPassword: text })}
-                placeholder="Enter current password"
-                secureTextEntry
-                autoCapitalize="none"
-              />
+              <View style={styles.passwordInputContainer}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  value={passwordForm.currentPassword}
+                  onChangeText={(text) => setPasswordForm({ ...passwordForm, currentPassword: text })}
+                  placeholder="Enter current password"
+                  secureTextEntry={!showCurrentPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  onPress={() => setShowCurrentPassword(!showCurrentPassword)}
+                  style={styles.eyeIcon}
+                >
+                  <Ionicons
+                    name={showCurrentPassword ? "eye-outline" : "eye-off-outline"}
+                    size={20}
+                    color="#6b7280"
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>New Password</Text>
-              <TextInput
-                style={styles.input}
-                value={passwordForm.newPassword}
-                onChangeText={(text) => setPasswordForm({ ...passwordForm, newPassword: text })}
-                placeholder="Enter new password"
-                secureTextEntry
-                autoCapitalize="none"
-              />
+              <View style={styles.passwordInputContainer}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  value={passwordForm.newPassword}
+                  onChangeText={(text) => setPasswordForm({ ...passwordForm, newPassword: text })}
+                  placeholder="Enter new password"
+                  secureTextEntry={!showNewPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  onPress={() => setShowNewPassword(!showNewPassword)}
+                  style={styles.eyeIcon}
+                >
+                  <Ionicons
+                    name={showNewPassword ? "eye-outline" : "eye-off-outline"}
+                    size={20}
+                    color="#6b7280"
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
             <View style={styles.inputGroup}>
               <Text style={styles.inputLabel}>Confirm New Password</Text>
-              <TextInput
-                style={styles.input}
-                value={passwordForm.confirmPassword}
-                onChangeText={(text) => setPasswordForm({ ...passwordForm, confirmPassword: text })}
-                placeholder="Confirm new password"
-                secureTextEntry
-                autoCapitalize="none"
-              />
+              <View style={styles.passwordInputContainer}>
+                <TextInput
+                  style={[styles.input, styles.passwordInput]}
+                  value={passwordForm.confirmPassword}
+                  onChangeText={(text) => setPasswordForm({ ...passwordForm, confirmPassword: text })}
+                  placeholder="Confirm new password"
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                />
+                <TouchableOpacity
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  style={styles.eyeIcon}
+                >
+                  <Ionicons
+                    name={showConfirmPassword ? "eye-outline" : "eye-off-outline"}
+                    size={20}
+                    color="#6b7280"
+                  />
+                </TouchableOpacity>
+              </View>
             </View>
           </ScrollView>
 
@@ -1557,6 +1599,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
     borderColor: '#E5E7EB',
+  },
+  passwordInputContainer: {
+    position: 'relative',
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  passwordInput: {
+    flex: 1,
+    paddingRight: 40,
+  },
+  eyeIcon: {
+    position: 'absolute',
+    right: 12,
+    padding: 4,
+    zIndex: 1,
   },
   textArea: {
     height: 80,

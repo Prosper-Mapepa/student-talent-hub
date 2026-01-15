@@ -12,6 +12,7 @@ import WelcomeScreen from '../screens/auth/WelcomeScreen';
 import LoginScreen from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
 import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+import ResetPasswordScreen from '../screens/auth/ResetPasswordScreen';
 import PrivacyPolicyScreen from '../screens/legal/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/legal/TermsConditionsScreen';
 import JobsScreen from '../screens/jobs/JobsScreen';
@@ -48,6 +49,7 @@ const AuthStack = () => (
     <Stack.Screen name="Login" component={LoginScreen} />
     <Stack.Screen name="Register" component={RegisterScreen} />
     <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+    <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
     <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
     <Stack.Screen name="TermsConditions" component={TermsConditionsScreen} />
   </Stack.Navigator>
@@ -219,10 +221,13 @@ const MainStack = () => (
   </Stack.Navigator>
 );
 
-const AppNavigator = () => {
+const AppNavigator = React.forwardRef<any>((props, ref) => {
   const { isAuthenticated, isLoading } = useSelector((state: RootState) => state.auth);
   const navigationRef = useRef<any>(null);
   const isInitialLoad = useRef(true);
+
+  // Expose navigation ref to parent for deep linking
+  React.useImperativeHandle(ref, () => navigationRef.current, []);
 
   // Only show loading screen on initial app load, not during login attempts
   React.useEffect(() => {
@@ -255,6 +260,8 @@ const AppNavigator = () => {
       </Stack.Navigator>
     </NavigationContainer>
   );
-};
+});
+
+AppNavigator.displayName = 'AppNavigator';
 
 export default AppNavigator; 
