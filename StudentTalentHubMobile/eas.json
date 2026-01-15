@@ -67,7 +67,8 @@
     "production": {
       "autoIncrement": true,
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "autoSubmit": false  
       },
       "android": {
         "buildType": "app-bundle"
@@ -81,9 +82,9 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "your-apple-id@example.com",
-        "ascAppId": "your-app-store-connect-app-id",
-        "appleTeamId": "your-team-id"
+        "appleId": "mapepaprosper76@gmail.com",
+        "ascAppId": "6757563079",
+        "appleTeamId": "RP9AAV97KQ"
       },
       "android": {
         "serviceAccountKeyPath": "./google-service-account.json",
