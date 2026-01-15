@@ -90,7 +90,7 @@ const ForgotPasswordScreen: React.FC = () => {
       setIsEmailSent(true);
       Alert.alert(
         'Reset Link Sent',
-        'If an account with this email exists, you will receive a password reset link shortly.',
+        'We have sent a password reset link to your email. Please check your inbox or spam folder.',
         [{ text: 'OK', onPress: () => navigation.navigate('Login') }]
       );
     } catch (error: any) {
