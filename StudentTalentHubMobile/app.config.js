@@ -18,6 +18,7 @@ export default {
       supportsTablet: true,
       bundleIdentifier: "com.prospermap.StudentTalentHubMobile",
       buildNumber: "1",
+      associatedDomains: ["applinks:cmutalenthub.netlify.app"],
       infoPlist: {
         NSCameraUsageDescription: "This app needs access to your camera to upload profile pictures and talent photos.",
         NSPhotoLibraryUsageDescription: "This app needs access to your photo library to upload profile pictures and talent photos.",
