@@ -6,6 +6,7 @@ import { initializeAuth } from './src/store/slices/authSlice';
 import { StatusBar } from 'expo-status-bar';
 import { ToastManager } from './src/components/ui/toast';
 import { Linking } from 'react-native';
+import * as Updates from 'expo-updates';
 
 export default function App() {
   const navigationRef = useRef<any>(null);
@@ -13,6 +14,27 @@ export default function App() {
   useEffect(() => {
     // Initialize authentication state on app start
     store.dispatch(initializeAuth());
+
+    // Check for OTA updates
+    async function onFetchUpdateAsync() {
+      try {
+        const update = await Updates.checkForUpdateAsync();
+
+        if (update.isAvailable) {
+          await Updates.fetchUpdateAsync();
+          // Reload the app with the new update
+          await Updates.reloadAsync();
+        }
+      } catch (error) {
+        // Silent fail - app will continue with cached version
+        console.log(`Error checking for updates: ${error}`);
+      }
+    }
+
+    // Only check for updates in production builds (not development)
+    if (__DEV__ === false && Updates.isEnabled) {
+      onFetchUpdateAsync();
+    }
 
     // Handle deep links when app is opened from a link
     const handleInitialURL = async () => {

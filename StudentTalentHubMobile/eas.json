@@ -73,7 +73,8 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "APP_ENV": "production"
+        "APP_ENV": "production",
+        "API_BASE_URL": "https://web-production-11221.up.railway.app"
       }
     }
   },

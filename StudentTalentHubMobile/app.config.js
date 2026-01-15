@@ -9,6 +9,15 @@ export default {
     icon: "./assets/icon.png",
     userInterfaceStyle: "light",
     newArchEnabled: false,
+    updates: {
+      url: "https://u.expo.dev/6c631a05-9ba5-4202-ad44-0348f65f74ea",
+      fallbackToCacheTimeout: 0,
+      checkAutomatically: "ON_LOAD",
+      enabled: true,
+    },
+    runtimeVersion: {
+      policy: "appVersion",
+    },
     splash: {
       image: "./assets/splash.png",
       resizeMode: "contain",
