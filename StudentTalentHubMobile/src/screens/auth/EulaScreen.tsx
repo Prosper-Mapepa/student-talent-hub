@@ -68,6 +68,18 @@ const EulaScreen: React.FC<EulaScreenProps> = ({ onAccept, onReject }) => {
     const tokenFromStorage = await AsyncStorage.getItem('authToken');
     const hasAuth = !!(token || tokenFromStorage || isAuthenticated);
     
+    // If onAccept callback is provided (from EulaGuard), trust that parent has checked auth
+    // If no callback, we're in registration flow - only allow acceptance if authenticated
+    if (!hasAuth && !onAccept) {
+      Alert.alert(
+        'View Only',
+        'You can read the Terms of Service. To accept the terms, please complete registration first. The terms will be automatically accepted after you register.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    // If authenticated or onAccept callback provided, proceed with acceptance
     if (!hasAuth) {
       Alert.alert(
         'Authentication Required',
@@ -205,33 +217,53 @@ const EulaScreen: React.FC<EulaScreenProps> = ({ onAccept, onReject }) => {
           </ScrollView>
 
           <View style={styles.footer}>
-            <TouchableOpacity
-              style={[styles.rejectButton, (accepting || accepted) && styles.disabledButton]}
-              onPress={handleReject}
-              disabled={accepting || accepted}
-            >
-              <Text style={styles.rejectButtonText}>Decline</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.acceptButton, (accepting || accepted) && styles.disabledButton]}
-              onPress={handleAccept}
-              disabled={accepting || accepted}
-            >
-              <LinearGradient
-                colors={['#8F1A27', '#6A0032', '#8F1A27']}
-                style={styles.acceptButtonGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+            {!hasToken && !onAccept ? (
+              // During registration flow (viewing only) - show close button instead
+              <TouchableOpacity
+                style={[styles.acceptButton, styles.viewOnlyButton]}
+                onPress={() => navigation.goBack()}
               >
-                {accepting ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.acceptButtonText}>
-                    {accepted ? 'Accepted' : 'Accept & Continue'}
-                  </Text>
-                )}
-              </LinearGradient>
-            </TouchableOpacity>
+                <LinearGradient
+                  colors={['#8F1A27', '#6A0032', '#8F1A27']}
+                  style={styles.acceptButtonGradient}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                >
+                  <Text style={styles.acceptButtonText}>Close</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            ) : (
+              // Authenticated flow - show accept/decline buttons
+              <>
+                <TouchableOpacity
+                  style={[styles.rejectButton, (accepting || accepted) && styles.disabledButton]}
+                  onPress={handleReject}
+                  disabled={accepting || accepted}
+                >
+                  <Text style={styles.rejectButtonText}>Decline</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.acceptButton, (accepting || accepted) && styles.disabledButton]}
+                  onPress={handleAccept}
+                  disabled={accepting || accepted}
+                >
+                  <LinearGradient
+                    colors={['#8F1A27', '#6A0032', '#8F1A27']}
+                    style={styles.acceptButtonGradient}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 0 }}
+                  >
+                    {accepting ? (
+                      <ActivityIndicator color="#fff" />
+                    ) : (
+                      <Text style={styles.acceptButtonText}>
+                        {accepted ? 'Accepted' : 'Accept & Continue'}
+                      </Text>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              </>
+            )}
           </View>
         </SafeAreaView>
       </LinearGradient>
@@ -328,6 +360,10 @@ const styles = StyleSheet.create({
   },
   disabledButton: {
     opacity: 0.6,
+  },
+  viewOnlyButton: {
+    flex: 1,
+    marginHorizontal: 0,
   },
   loadingContainer: {
     flex: 1,
