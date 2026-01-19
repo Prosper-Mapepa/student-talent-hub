@@ -15,6 +15,7 @@ import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
 import ResetPasswordScreen from '../screens/auth/ResetPasswordScreen';
 import PrivacyPolicyScreen from '../screens/legal/PrivacyPolicyScreen';
 import TermsConditionsScreen from '../screens/legal/TermsConditionsScreen';
+import EulaScreen from '../screens/auth/EulaScreen';
 import JobsScreen from '../screens/jobs/JobsScreen';
 import JobDetailScreen from '../screens/jobs/JobDetailScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
@@ -39,6 +40,7 @@ import JobApplicationsScreen from '../screens/business/JobApplicationsScreen';
 // Import components
 import TabBarIcon from '../components/TabBarIcon';
 import { COLORS } from '../theme/colors';
+import EulaGuard from '../components/EulaGuard';
 
 const Stack = createStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -52,6 +54,7 @@ const AuthStack = () => (
     <Stack.Screen name="ResetPassword" component={ResetPasswordScreen} />
     <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} />
     <Stack.Screen name="TermsConditions" component={TermsConditionsScreen} />
+    <Stack.Screen name="Eula" component={EulaScreen} />
   </Stack.Navigator>
 );
 
@@ -244,7 +247,13 @@ const AppNavigator = React.forwardRef<any>((props, ref) => {
         {shouldShowLoading ? (
           <Stack.Screen name="Loading" component={LoadingScreen} />
         ) : isAuthenticated ? (
-          <Stack.Screen name="Main" component={MainStack} />
+          <Stack.Screen name="Main">
+            {() => (
+              <EulaGuard>
+                <MainStack />
+              </EulaGuard>
+            )}
+          </Stack.Screen>
         ) : (
           <Stack.Screen 
             name="Auth" 

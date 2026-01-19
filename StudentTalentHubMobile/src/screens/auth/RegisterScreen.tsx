@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -24,9 +24,10 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { UserRole } from '../../types';
 import { Picker } from '@react-native-picker/picker';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import type { RootStackParamList } from '../../types';
+import apiService from '../../services/api';
 
 const { width, height } = Dimensions.get('window');
 const isTablet = width >= 768 || (Platform.OS === 'ios' && Platform.isPad);
@@ -97,6 +98,12 @@ const RegisterScreen: React.FC = () => {
       }),
     ]).start();
   }, []);
+
+  // EULA acceptance during registration:
+  // 1. User checks checkbox (agreedToTerms = true)
+  // 2. User can read full EULA by clicking Terms link
+  // 3. After registration, user is authenticated and EulaGuard will check/accept EULA
+  // For now, we just track the checkbox state for validation
 
   const [studentData, setStudentData] = useState({
     firstName: '',
@@ -188,13 +195,18 @@ const RegisterScreen: React.FC = () => {
     }
     const { confirmPassword, ...registrationData } = businessData;
     try {
+      // Include agreedToTerms in registration
       const result = await dispatch(registerBusiness({
         ...businessData,
         firstName: 'Business',
         lastName: 'Account',
         role: UserRole.BUSINESS,
+        agreedToTerms: agreedToTerms,
       })).unwrap();
       console.log('Business registration result:', result);
+      
+      // After successful registration, user will be authenticated
+      // EulaGuard will automatically check and show EULA if needed
     } catch (err: any) {
       console.log('Business registration error:', err);
       // Extract and format error message
@@ -593,13 +605,24 @@ const RegisterScreen: React.FC = () => {
                   </>
                 )}
                 <View style={styles.termsRow}>
-                  <TouchableOpacity onPress={() => setAgreedToTerms(!agreedToTerms)} style={styles.checkbox}>
+                  <TouchableOpacity 
+                    onPress={async () => {
+                      if (!agreedToTerms) {
+                        // Show EULA screen when user wants to accept
+                        // We'll handle acceptance via navigation listener
+                        navigation.navigate('Eula');
+                      } else {
+                        setAgreedToTerms(false);
+                      }
+                    }} 
+                    style={styles.checkbox}
+                  >
                     <Ionicons name={agreedToTerms ? 'checkbox' : 'square-outline'} size={20} color="#8F1A27" />
                   </TouchableOpacity>
                   <View style={styles.termsTextContainer}>
                     <Text style={styles.termsText}>I agree to the </Text>
-                    <TouchableOpacity onPress={() => navigation.navigate('TermsConditions')}>
-                      <Text style={styles.termsConditionsLink}>Terms and Conditions</Text>
+                    <TouchableOpacity onPress={() => navigation.navigate('Eula')}>
+                      <Text style={styles.termsConditionsLink}>Terms of Service</Text>
                     </TouchableOpacity>
                     <Text style={styles.termsText}> and </Text>
                     <TouchableOpacity onPress={() => navigation.navigate('PrivacyPolicy')}>

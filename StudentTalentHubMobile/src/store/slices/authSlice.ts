@@ -69,6 +69,19 @@ export const registerStudent = createAsyncThunk(
         ...user, 
         studentId: student?.id 
       }));
+      
+      // If user agreed to terms during registration, automatically accept EULA
+      if (credentials.agreedToTerms) {
+        try {
+          const eula = await apiService.getCurrentEula();
+          await apiService.acceptEula(eula.version);
+          console.log('EULA accepted automatically after registration');
+        } catch (error: any) {
+          // Log error but don't fail registration - EulaGuard will show EULA if needed
+          console.error('Error auto-accepting EULA after registration:', error);
+        }
+      }
+      
       return { 
         token: access_token, 
         user: { 
@@ -102,6 +115,27 @@ export const registerBusiness = createAsyncThunk(
         ...user, 
         businessId: business?.id 
       }));
+      
+      // If user agreed to terms during registration, automatically accept EULA
+      // Note: This happens AFTER token is saved to AsyncStorage, so it should work
+      if (credentials.agreedToTerms) {
+        try {
+          // Small delay to ensure AsyncStorage write is complete
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          const eula = await apiService.getCurrentEula();
+          await apiService.acceptEula(eula.version);
+          console.log('EULA accepted automatically after registration');
+        } catch (error: any) {
+          // Log error but don't fail registration - EulaGuard will show EULA if needed
+          console.error('Error auto-accepting EULA after registration:', error);
+          // If 401, the token might not be available yet - EulaGuard will handle it
+          if (error.response?.status === 401) {
+            console.log('Token not available for EULA acceptance yet - will be handled by EulaGuard');
+          }
+        }
+      }
+      
       return { 
         token: access_token, 
         user: { 

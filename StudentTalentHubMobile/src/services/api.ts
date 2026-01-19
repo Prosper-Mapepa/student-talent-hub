@@ -1301,6 +1301,89 @@ class ApiService {
       return false;
     }
   }
+
+  // Moderation Services
+  async getCurrentEula(): Promise<{ version: number; content: string; id: string }> {
+    try {
+      const response: AxiosResponse<any> = await this.api.get('/moderation/eula');
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      console.error('Error fetching EULA:', error);
+      throw error;
+    }
+  }
+
+  async acceptEula(version: number): Promise<void> {
+    try {
+      await this.api.post('/moderation/eula/accept', {
+        version,
+        accepted: true,
+      });
+    } catch (error: any) {
+      console.error('Error accepting EULA:', error);
+      throw error;
+    }
+  }
+
+  async checkEulaAcceptance(): Promise<{ accepted: boolean }> {
+    try {
+      const response: AxiosResponse<any> = await this.api.get('/moderation/eula/check');
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      // Handle 401 gracefully - user might not be authenticated yet
+      if (error.response?.status === 401) {
+        console.log('EULA check requires authentication');
+        return { accepted: false };
+      }
+      console.error('Error checking EULA acceptance:', error);
+      throw error;
+    }
+  }
+
+  async reportContent(report: {
+    type: 'MESSAGE' | 'PROFILE' | 'PROJECT' | 'ACHIEVEMENT' | 'JOB' | 'USER';
+    reportedUserId?: string;
+    contentId?: string;
+    reason: 'INAPPROPRIATE_CONTENT' | 'HARASSMENT' | 'SPAM' | 'FAKE_PROFILE' | 'INAPPROPRIATE_BEHAVIOR' | 'OTHER';
+    description?: string;
+  }): Promise<any> {
+    try {
+      const response: AxiosResponse<any> = await this.api.post('/moderation/report', report);
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      console.error('Error reporting content:', error);
+      throw error;
+    }
+  }
+
+  async blockUser(userId: string): Promise<any> {
+    try {
+      const response: AxiosResponse<any> = await this.api.post('/moderation/block', { userId });
+      return response.data?.data || response.data;
+    } catch (error: any) {
+      console.error('Error blocking user:', error);
+      throw error;
+    }
+  }
+
+  async unblockUser(userId: string): Promise<void> {
+    try {
+      await this.api.delete(`/moderation/block/${userId}`);
+    } catch (error: any) {
+      console.error('Error unblocking user:', error);
+      throw error;
+    }
+  }
+
+  async getBlockedUsers(): Promise<any[]> {
+    try {
+      const response: AxiosResponse<any> = await this.api.get('/moderation/blocked');
+      return response.data?.data || response.data || [];
+    } catch (error: any) {
+      console.error('Error fetching blocked users:', error);
+      throw error;
+    }
+  }
 }
 
 export const apiService = new ApiService();
