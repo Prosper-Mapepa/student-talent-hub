@@ -606,15 +606,7 @@ const RegisterScreen: React.FC = () => {
                 )}
                 <View style={styles.termsRow}>
                   <TouchableOpacity 
-                    onPress={async () => {
-                      if (!agreedToTerms) {
-                        // Show EULA screen when user wants to accept
-                        // We'll handle acceptance via navigation listener
-                        navigation.navigate('Eula');
-                      } else {
-                        setAgreedToTerms(false);
-                      }
-                    }} 
+                    onPress={() => setAgreedToTerms(!agreedToTerms)} 
                     style={styles.checkbox}
                   >
                     <Ionicons name={agreedToTerms ? 'checkbox' : 'square-outline'} size={20} color="#8F1A27" />
