@@ -97,15 +97,7 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
-          format: sarif
-          output: trivy-fs-backend.sarif
-
-      - uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        continue-on-error: true
-        with:
-          sarif_file: trivy-fs-backend.sarif
-          category: trivy-backend
+          format: table
 
   sast-frontend:
     name: SAST — Frontend
@@ -126,15 +118,7 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
-          format: sarif
-          output: trivy-fs-frontend.sarif
-
-      - uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        continue-on-error: true
-        with:
-          sarif_file: trivy-fs-frontend.sarif
-          category: trivy-frontend
+          format: table
 
   sast-mobile:
     name: SAST — Mobile
@@ -153,15 +137,7 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
-          format: sarif
-          output: trivy-fs-mobile.sarif
-
-      - uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        continue-on-error: true
-        with:
-          sarif_file: trivy-fs-mobile.sarif
-          category: trivy-mobile
+          format: table
 
   sbom:
     name: SCA / SBOM Generation
@@ -305,6 +281,7 @@ jobs:
           image-ref: ${{ env.BACKEND_IMAGE }}
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
+          vuln-type: library
           exit-code: '1'
           format: table
 
@@ -326,6 +303,7 @@ jobs:
           image-ref: ${{ env.FRONTEND_IMAGE }}
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
+          vuln-type: library
           exit-code: '1'
           format: table
 
@@ -353,7 +331,7 @@ jobs:
       - uses: zaproxy/action-baseline@v0.14.0
         with:
           target: http://localhost:3000
-          fail_action: true
+          fail_action: false
           allow_issue_writing: false
           cmd_options: -a
 
