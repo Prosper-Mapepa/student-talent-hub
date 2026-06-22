@@ -53,10 +53,13 @@ jobs:
         with:
           filters: |
             backend:
+              - 'backend'
               - 'backend/**'
             frontend:
+              - 'frontend'
               - 'frontend/**'
             mobile:
+              - 'mobile'
               - 'mobile/**'
 
   secret-scan:
@@ -89,6 +92,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: ./backend
+          scanners: vuln
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           exit-code: '1'
@@ -117,6 +121,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: ./frontend
+          scanners: vuln
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           exit-code: '1'
@@ -143,6 +148,7 @@ jobs:
         with:
           scan-type: fs
           scan-ref: ./mobile
+          scanners: vuln
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           exit-code: '1'
