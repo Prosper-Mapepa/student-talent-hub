@@ -1,0 +1,50 @@
+# CI stack for DAST (OWASP ZAP) — not for production use
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: veritalent
+      POSTGRES_PASSWORD: ci_only_password_change_me
+      POSTGRES_DB: veritalent_ci
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U veritalent -d veritalent_ci"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USERNAME: veritalent
+      DB_PASSWORD: ci_only_password_change_me
+      DB_NAME: veritalent_ci
+      JWT_SECRET: ci-jwt-secret-for-testing-only-min-32-characters-long
+      JWT_EXPIRES_IN: 1d
+      CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "3001:3001"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:3001
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      PORT: 3000
+    ports:
+      - "3000:3000"
