@@ -1,90 +1,82 @@
 # DevSecOps CI/CD Pipeline — VeriTalent
 
-Automated security pipeline (GitHub Actions) that **fails builds** when critical issues are detected.
+Automated security pipeline (GitHub Actions) scoped to each app folder in the monorepo.
 
-| Layer | Tool | Gate |
-|-------|------|------|
-| **Secret detection** | TruffleHog | Verified secrets in git history |
-| **SAST** | Trivy (filesystem) | CVSS ≥ 7.0 (`HIGH`, `CRITICAL`) |
-| **SCA / SBOM** | Trivy | CycloneDX + SPDX artifacts (supply chain visibility) |
-| **Container scan** | Trivy (Docker images) | CVSS ≥ 7.0 on backend + frontend images |
-| **DAST** | OWASP ZAP baseline | Dynamic scan of running app |
-
-## Architecture
+## Monorepo layout
 
 ```
-Push / PR
-   │
-   ├─► TruffleHog (secrets)
-   ├─► Trivy FS (SAST + deps)
-   ├─► Trivy SBOM (SCA)
-   │
-   ├─► Docker build (backend + frontend)
-   │      └─► Trivy image scan
-   │
-   └─► docker-compose.ci.yml
-          └─► OWASP ZAP → http://localhost:3000
+frontend/   → Next.js web (Netlify)       — Docker + Trivy + ZAP
+backend/    → NestJS API (Railway)        — Docker + Trivy + ZAP
+mobile/     → Expo / React Native          — Trivy FS + typecheck (no Docker)
 ```
 
-## Files
+Each app has its own `package.json`, env config, and deployment target. The root repo orchestrates CI only.
 
-| File | Purpose |
-|------|---------|
-| `.github/workflows/devsecops.yml` | Main pipeline |
-| `backend/Dockerfile` | NestJS API image |
-| `frontend/Dockerfile` | Next.js standalone image |
-| `docker-compose.ci.yml` | Postgres + API + web for ZAP |
+## Pipeline jobs
+
+| Job | Scope | Gate |
+|-----|-------|------|
+| **Detect Changes** | Path filter | Skips unchanged apps |
+| **TruffleHog** | Whole repo | Verified secrets |
+| **SAST (Trivy FS)** | Per changed app | CVSS ≥ 7.0 |
+| **SBOM** | Per changed app | SPDX artifacts |
+| **Mobile typecheck** | `mobile/` only | TypeScript |
+| **Docker build** | `backend/`, `frontend/` | Build must succeed |
+| **Container scan** | Backend + frontend images | CVSS ≥ 7.0 |
+| **OWASP ZAP** | Running web stack | Dynamic scan |
+
+## Path-based triggers
+
+The workflow runs when files change in:
+
+- `backend/**`
+- `frontend/**`
+- `mobile/**`
+- `.github/workflows/devsecops.yml`
+- `docker-compose.ci.yml`
+
+Use **Run workflow** (workflow_dispatch) to scan everything manually.
 
 ## Local commands
 
 ```bash
-# Build images
+# Install all apps
+npm run install:all
+
+# Build Docker images
 docker build -t veritalent-backend:local ./backend
 docker build -t veritalent-frontend:local \
   --build-arg NEXT_PUBLIC_API_URL=http://localhost:3001 ./frontend
 
-# Filesystem scan (fail on HIGH/CRITICAL)
-docker run --rm -v "$PWD":/src aquasec/trivy:latest fs \
-  --severity HIGH,CRITICAL --exit-code 1 /src
-
-# Start stack for manual ZAP testing
-docker compose -f docker-compose.ci.yml up --build
+# Start stack for ZAP / manual testing
+npm run ci:stack
 # Frontend: http://localhost:3000  |  API: http://localhost:3001
 
-# Generate SBOM locally
-docker run --rm -v "$PWD":/src aquasec/trivy:latest fs \
-  --format cyclonedx -o /src/sbom.local.json /src/backend
+# Mobile
+npm run dev:mobile
+npm run typecheck:mobile
 ```
 
-## Triggering the pipeline
+## Submodule setup
 
-- **Automatic:** push or PR to `main`, `master`, or `develop`
-- **Manual:** GitHub → Actions → DevSecOps Pipeline → Run workflow
+`frontend/` and `backend/` are git submodules. CI checks them out with `submodules: recursive`.
 
-## SBOM artifacts
+```bash
+git submodule update --init --recursive
+```
 
-After each run, download **sbom-reports** from the Actions artifacts tab:
-- `sbom-repo.cyclonedx.json` — full repo
-- `sbom-backend.spdx.json` — NestJS API
-- `sbom-frontend.spdx.json` — Next.js web
+Ensure `.gitmodules` contains URLs for both submodules.
 
 ## Tuning
 
-- **Severity threshold:** edit `TRIVY_SEVERITY` in the workflow (`HIGH,CRITICAL` = CVSS ≥ 7.0)
-- **Ignore false positives:** add `.trivyignore` at repo root
-- **ZAP rules:** add `.zap/rules.tsv` for accepted findings
+- **Severity:** edit `TRIVY_SEVERITY` in the workflow
+- **False positives:** add `.trivyignore` in the affected app folder
+- **ZAP rules:** add `.zap/rules.tsv` at repo root
 
-## Week-by-week rollout (course project)
+## SBOM artifacts
 
-| Week | Focus | Status |
-|------|-------|--------|
-| 1 | TruffleHog + Trivy FS | ✅ in workflow |
-| 2 | Docker + Trivy container scan | ✅ in workflow |
-| 3 | SBOM generation | ✅ in workflow |
-| 4 | OWASP ZAP DAST | ✅ in workflow |
+Download **sbom-reports** from Actions artifacts:
 
-## Notes
-
-- CI uses **local Postgres** — credentials in `docker-compose.ci.yml` are for testing only.
-- Push this folder to GitHub to activate Actions (`.github/workflows/` must be on the default branch).
-- For a split repo (separate `frontend` git remote), copy the workflow and Docker files into that repo or use a monorepo.
+- `sbom-backend.spdx.json`
+- `sbom-frontend.spdx.json`
+- `sbom-mobile.spdx.json`

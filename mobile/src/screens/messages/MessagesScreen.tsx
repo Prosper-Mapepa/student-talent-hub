@@ -1,0 +1,1847 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  FlatList,
+  TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
+  RefreshControl,
+  Alert,
+  Modal,
+  ScrollView,
+  KeyboardAvoidingView,
+  Platform,
+  Image,
+  Dimensions,
+} from 'react-native';
+import { showToast } from '../../components/ui/toast';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
+import { LinearGradient } from 'expo-linear-gradient';
+import DashboardHeader from '../../components/dashboard/DashboardHeader';
+import { useDispatch } from 'react-redux';
+import { AppDispatch, useAppSelector } from '../../store';
+import { fetchConversations, fetchMessages, sendMessage, createConversation } from '../../store/slices/messagesSlice';
+import { Ionicons } from '@expo/vector-icons';
+import { Conversation, Message, User } from '../../types';
+import apiService from '../../services/api';
+import { COLORS, DASHBOARD_PADDING_H } from '../../theme';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Badge } from '../../components/ui/badge';
+import { Alert as AlertComponent, AlertDescription } from '../../components/ui/alert';
+
+const { width, height } = Dimensions.get('window');
+
+const MessagesScreen: React.FC = () => {
+  const dispatch = useDispatch<AppDispatch>();
+  const { user } = useAppSelector(state => state.auth);
+  const { conversations, messages, isLoading, error } = useAppSelector(state => state.messages);
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
+  const [refreshing, setRefreshing] = useState(false);
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
+  
+  // Get messages for current conversation directly from Redux to ensure fresh data
+  const selectedConversationMessages = useAppSelector(state => {
+    if (!selectedConversation?.id) return [];
+    const convMessages = state.messages.messages[selectedConversation.id];
+    return Array.isArray(convMessages) ? convMessages : [];
+  });
+  const [newMessage, setNewMessage] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [allUsers, setAllUsers] = useState<User[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filteredUsers, setFilteredUsers] = useState<User[]>([]);
+  const [filteredConversations, setFilteredConversations] = useState<Conversation[]>([]);
+  const [studentInfo, setStudentInfo] = useState<any>(null);
+  const [chatLoadError, setChatLoadError] = useState<string | null>(null);
+  const [chatHeaderImageError, setChatHeaderImageError] = useState(false);
+  const [messagesKey, setMessagesKey] = useState(0); // Force re-render key
+  const [localMessages, setLocalMessages] = useState<Message[]>([]); // Local fallback for messages
+  const messagesListRef = useRef<FlatList>(null);
+
+  // Removed verbose logging for performance
+
+  useEffect(() => {
+    if (user?.id) {
+      dispatch(fetchConversations()).catch((error: any) => {
+        // Don't show error if it's a 401 (unauthorized) - user probably logged out
+        if (error?.response?.status !== 401) {
+          console.error('Failed to fetch conversations:', error);
+        }
+      });
+    }
+    loadAllUsers();
+  }, [dispatch, user?.id]);
+
+  // Monitor messages state changes and force re-render
+  useEffect(() => {
+    if (selectedConversation?.id) {
+      const conversationMessages = messages[selectedConversation.id];
+      console.log('=== MESSAGES STATE MONITOR ===');
+      console.log('Conversation ID:', selectedConversation.id);
+      console.log('Messages object keys:', Object.keys(messages));
+      console.log('Messages for this conversation:', conversationMessages);
+      console.log('Is array?', Array.isArray(conversationMessages));
+      console.log('Message count:', conversationMessages?.length || 0);
+      console.log('All messages state:', JSON.stringify(messages, null, 2));
+      console.log('==============================');
+      
+      // Force re-render when messages change
+      setMessagesKey(prev => prev + 1);
+      
+      // Scroll to bottom when messages are loaded
+      if (Array.isArray(conversationMessages) && conversationMessages.length > 0) {
+        setTimeout(() => {
+          messagesListRef.current?.scrollToEnd({ animated: false });
+        }, 300);
+      }
+    }
+  }, [messages, selectedConversation?.id]);
+
+  // Poll for new messages while conversation is open (real-time updates)
+  useEffect(() => {
+    if (!showChatModal || !selectedConversation?.id || !user?.id) return;
+
+    // Initial fetch with proper error handling
+    const loadMessages = async () => {
+      try {
+        console.log('Polling: Fetching messages for conversation:', selectedConversation.id);
+        const result = await dispatch(fetchMessages(selectedConversation.id)).unwrap();
+        console.log('Polling: Messages fetched successfully, count:', result.messages?.length || 0);
+        // Scroll to bottom after messages load
+        setTimeout(() => {
+          messagesListRef.current?.scrollToEnd({ animated: false });
+        }, 200);
+      } catch (error: any) {
+        if (error?.response?.status !== 401) {
+          console.error('Failed to poll messages:', error);
+          // Don't set error state for polling failures, just log
+        }
+      }
+    };
+
+    loadMessages();
+
+    // Poll for new messages every 10 seconds while chat is open
+    const intervalId = setInterval(() => {
+      loadMessages();
+    }, 10000); // Poll every 10 seconds
+
+    // Cleanup interval when chat closes or conversation changes
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [dispatch, showChatModal, selectedConversation?.id, user?.id]);
+
+  useEffect(() => {
+    if (searchTerm.trim() === '') {
+      setFilteredUsers([]);
+      setFilteredConversations([]);
+    } else {
+      const searchLower = searchTerm.toLowerCase();
+      
+      // Filter users
+      const filtered = allUsers.filter(u => {
+        const firstName = u.firstName?.toLowerCase() || '';
+        const lastName = u.lastName?.toLowerCase() || '';
+        const email = u.email?.toLowerCase() || '';
+        const fullName = `${firstName} ${lastName}`.trim();
+        return firstName.includes(searchLower) ||
+               lastName.includes(searchLower) ||
+               email.includes(searchLower) ||
+               fullName.includes(searchLower);
+      });
+      setFilteredUsers(filtered);
+      
+      // Filter conversations (deduplicated)
+      const normalizedConversations = Array.isArray(conversations) ? conversations : [];
+      const deduplicatedConvs = deduplicateConversations(normalizedConversations);
+      const filteredConvs = deduplicatedConvs.filter(conv => {
+        const participantName = getParticipantName(conv, user?.id || '').toLowerCase();
+        const lastMsg = conv.lastMessage?.content?.toLowerCase() || '';
+        return participantName.includes(searchLower) || lastMsg.includes(searchLower);
+      });
+      setFilteredConversations(filteredConvs);
+    }
+  }, [searchTerm, allUsers, conversations, user?.id]);
+
+  const loadAllUsers = async () => {
+    try {
+      // Check if user is logged in before making API call
+      if (!user?.id) {
+        console.log('User not logged in, skipping user load');
+        return;
+      }
+      
+      const users = await apiService.getAllUsers();
+      const filteredUsers = users.filter(u => u.id !== user?.id);
+      setAllUsers(filteredUsers);
+      console.log('Loaded users for search:', filteredUsers.length);
+    } catch (error: any) {
+      console.error('Failed to load users:', error);
+      // Don't show error if it's a 401 (unauthorized) or 403 (forbidden) - expected for some roles
+      if (error?.response?.status !== 401 && error?.response?.status !== 403) {
+        console.error('Non-auth error loading users:', error);
+        // Only show toast for unexpected errors
+        showToast('Failed to load users. Some users may not be available.', 'warning');
+      }
+      // Set empty array on error so search still works with existing conversations
+      setAllUsers([]);
+    }
+  };
+
+  // Deduplicate conversations by participant pair - keep only the most recent one
+  const deduplicateConversations = (conversations: Conversation[]): Conversation[] => {
+    if (!Array.isArray(conversations) || conversations.length === 0) {
+      return [];
+    }
+
+    if (!user?.id) {
+      return conversations;
+    }
+
+    // Group conversations by participant pair (excluding current user)
+    const conversationMap = new Map<string, Conversation>();
+
+    for (const conv of conversations) {
+      if (!conv.participants || !Array.isArray(conv.participants)) {
+        continue;
+      }
+
+      // Get the other participant (not the current user)
+      const otherParticipant = conv.participants.find(p => p.id !== user.id);
+      if (!otherParticipant) {
+        continue;
+      }
+
+      // Create a unique key for this participant pair
+      const participantKey = otherParticipant.id;
+
+      // Check if we already have a conversation with this participant
+      const existingConv = conversationMap.get(participantKey);
+
+      if (!existingConv) {
+        // First conversation with this participant
+        conversationMap.set(participantKey, conv);
+      } else {
+        // Compare timestamps to keep the most recent one
+        const existingTime = existingConv.updatedAt 
+          ? new Date(existingConv.updatedAt).getTime() 
+          : existingConv.lastMessage?.createdAt 
+            ? new Date(existingConv.lastMessage.createdAt).getTime() 
+            : 0;
+        
+        const currentTime = conv.updatedAt 
+          ? new Date(conv.updatedAt).getTime() 
+          : conv.lastMessage?.createdAt 
+            ? new Date(conv.lastMessage.createdAt).getTime() 
+            : 0;
+
+        if (currentTime > existingTime) {
+          // Current conversation is more recent, replace it
+          conversationMap.set(participantKey, conv);
+        }
+      }
+    }
+
+    // Return deduplicated conversations as an array, sorted by most recent
+    return Array.from(conversationMap.values()).sort((a, b) => {
+      const timeA = a.updatedAt 
+        ? new Date(a.updatedAt).getTime() 
+        : a.lastMessage?.createdAt 
+          ? new Date(a.lastMessage.createdAt).getTime() 
+          : 0;
+      
+      const timeB = b.updatedAt 
+        ? new Date(b.updatedAt).getTime() 
+        : b.lastMessage?.createdAt 
+          ? new Date(b.lastMessage.createdAt).getTime() 
+          : 0;
+
+      return timeB - timeA; // Most recent first
+    });
+  };
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      console.log('Refreshing conversations...');
+      await dispatch(fetchConversations()).unwrap();
+      console.log('Conversations refreshed successfully');
+    } catch (error) {
+      console.error('Failed to refresh conversations:', error);
+      showToast('Failed to refresh conversations', 'error');
+    } finally {
+    setRefreshing(false);
+    }
+  };
+
+  const handleSendMessage = async () => {
+    if (!newMessage.trim() || !selectedConversation) return;
+
+    setIsSending(true);
+    try {
+      const sentMessageResult = await dispatch(sendMessage({
+        conversationId: selectedConversation.id,
+        messageData: {
+          content: newMessage.trim()
+        }
+      })).unwrap();
+      
+      setNewMessage('');
+      
+      // Add message to local state immediately
+      if (sentMessageResult.message) {
+        setLocalMessages(prev => [...prev, sentMessageResult.message]);
+        setMessagesKey(prev => prev + 1);
+      }
+      
+      // Refresh messages and conversations list
+      const messagesResult = await dispatch(fetchMessages(selectedConversation.id)).unwrap();
+      
+      // Update local messages with fresh data
+      if (Array.isArray(messagesResult.messages) && messagesResult.messages.length > 0) {
+        setLocalMessages(messagesResult.messages);
+      }
+      
+      await dispatch(fetchConversations());
+      
+      // Scroll to bottom after sending
+      setTimeout(() => {
+        messagesListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+      
+      // Show success toast with small delay to ensure it displays
+      setTimeout(() => {
+        showToast('Message sent successfully!', 'success');
+      }, 150);
+    } catch (error: any) {
+      console.error('Error sending message:', error);
+      
+      // Extract error message with priority: API response message > error message (string or object) > status-based fallback
+      let errorMessage = 'Failed to send message.';
+      
+      // Handle string errors (from thunk rejectWithValue)
+      if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      // Handle Axios error objects
+      else if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message && !error.message.includes('Request failed with status code')) {
+        // Use error.message only if it's not a generic Axios error message
+        errorMessage = error.message;
+      } else if (error.response?.status === 401) {
+        errorMessage = 'You are not authenticated. Please log out and log back in.';
+      } else if (error.response?.status === 403) {
+        // For 403, check if there's a more specific message in the response
+        errorMessage = error.response?.data?.message || 'You are not authorized to send messages.';
+      } else if (error.response?.status === 404) {
+        errorMessage = 'Recipient not found.';
+      } else if (error.response?.status === 400) {
+        errorMessage = error.response?.data?.message || 'Invalid request. Please check your message.';
+      }
+      
+      showToast(errorMessage, 'error');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  const openChat = async (conversation: Conversation | null, otherUserId?: string) => {
+    let conv = conversation;
+    if (!conv && user && otherUserId) {
+      // Create a new conversation if it doesn't exist
+      try {
+        const newConversation = await dispatch(createConversation([user.id, otherUserId])).unwrap();
+        conv = newConversation;
+        // Refresh conversations list after creating
+        await dispatch(fetchConversations());
+      } catch (error: any) {
+        console.error('Error creating conversation:', error);
+        showToast(error?.message || 'Failed to create conversation', 'error');
+        return;
+      }
+    }
+    if (conv) {
+      setSelectedConversation(conv);
+      setChatLoadError(null);
+      setChatHeaderImageError(false); // Reset image error when opening new chat
+      setLocalMessages([]); // Clear local messages when opening new chat
+      setShowChatModal(true); // Open modal first so the polling effect can run
+      
+      // Fetch messages with retry logic - try both Redux and direct API
+      const loadMessagesWithRetry = async (retries = 3) => {
+        for (let i = 0; i < retries; i++) {
+          try {
+            console.log(`[Attempt ${i + 1}/${retries}] Fetching messages for conversation:`, conv.id);
+            console.log('Current user ID:', user?.id);
+            
+            if (!user?.id) {
+              throw new Error('User ID is missing');
+            }
+            
+            // ALWAYS try direct API call first to see raw response, then use Redux
+            console.log('=== DIRECT API TEST ===');
+            try {
+              const directMessages = await apiService.getMessages(conv!.id, user.id);
+              console.log('Direct API call result:', directMessages);
+              console.log('Direct API messages count:', directMessages.length);
+              console.log('Direct API is array?', Array.isArray(directMessages));
+              if (directMessages.length > 0) {
+                console.log('Direct API first message:', JSON.stringify(directMessages[0], null, 2));
+                setLocalMessages(directMessages);
+                console.log('Stored', directMessages.length, 'messages locally from direct API');
+              } else {
+                console.warn('Direct API returned EMPTY array - no messages in database for this conversation');
+                setLocalMessages([]);
+              }
+            } catch (directError: any) {
+              console.error('Direct API call failed:', directError);
+              console.error('Direct API error response:', directError?.response?.data);
+            }
+            console.log('=== END DIRECT API TEST ===');
+            
+            // Also try Redux for state management
+            try {
+              const result = await dispatch(fetchMessages(conv!.id)).unwrap();
+              console.log('Redux fetch successful:', result);
+              console.log('Redux messages count:', result.messages?.length || 0);
+              
+              // Update local messages if Redux has more
+              if (Array.isArray(result.messages) && result.messages.length > 0) {
+                setLocalMessages(result.messages);
+                console.log('Updated local messages from Redux:', result.messages.length);
+              }
+            } catch (reduxError: any) {
+              console.warn('Redux fetch failed (non-critical):', reduxError);
+              // Don't throw - we already have direct API result
+            }
+            
+            // Wait a bit for state to update
+            await new Promise(resolve => setTimeout(resolve, 150));
+            
+            // Force re-render to pick up new messages
+            setMessagesKey(prev => prev + 1);
+            
+            // Scroll to bottom when messages load
+            setTimeout(() => {
+              messagesListRef.current?.scrollToEnd({ animated: false });
+            }, 400);
+            
+            return; // Success, exit retry loop
+          } catch (error: any) {
+            console.error(`[Attempt ${i + 1}/${retries}] Error loading messages:`, error);
+            console.error('Error details:', {
+              message: error?.message,
+              response: error?.response?.data,
+              status: error?.response?.status
+            });
+            
+            if (i === retries - 1) {
+              // Last attempt failed
+              const errorMsg = error?.response?.data?.message || error?.message || 'Failed to load messages';
+              setChatLoadError(errorMsg);
+              showToast('Failed to load messages. Please try again.', 'error');
+            } else {
+              // Wait before retrying
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+          }
+        }
+      };
+      
+      loadMessagesWithRetry();
+    }
+  };
+
+  const getOtherParticipant = (conversation: Conversation | null | undefined) => {
+    if (!user || !conversation || !conversation.participants) return null;
+    return conversation.participants.find(p => p.id !== user.id);
+  };
+
+  const getParticipantName = (conversation: Conversation, currentUserId: string) => {
+    if (!conversation.participants || !Array.isArray(conversation.participants)) {
+      return 'Unknown User';
+    }
+    
+    const otherParticipant = conversation.participants.find(p => p.id !== currentUserId);
+    if (!otherParticipant) {
+      return 'Unknown User';
+    }
+    
+    // Handle different participant object structures
+    if (otherParticipant.role === 'student') {
+      // Check student relationship first (most reliable)
+      if (otherParticipant.student) {
+        const firstName = otherParticipant.student.firstName || '';
+        const lastName = otherParticipant.student.lastName || '';
+        const fullName = `${firstName} ${lastName}`.trim();
+        if (fullName) return fullName;
+      }
+      
+      // Fallback to direct firstName/lastName on participant
+      const firstName = otherParticipant.firstName || '';
+      const lastName = otherParticipant.lastName || '';
+      const fullName = `${firstName} ${lastName}`.trim();
+      if (fullName) return fullName;
+      
+      // Last resort: show email or a default name
+      if (otherParticipant.email) {
+        // Extract name from email if possible
+        const emailName = otherParticipant.email.split('@')[0];
+        return emailName.charAt(0).toUpperCase() + emailName.slice(1);
+      }
+      return 'Student User';
+    } else if (otherParticipant.role === 'business') {
+      const businessName = otherParticipant.business?.businessName;
+      if (businessName) return businessName;
+      return 'Business User';
+    }
+    
+    return 'Unknown User';
+  };
+
+  const getParticipantInitials = (conversation: Conversation, currentUserId: string) => {
+    if (!conversation.participants || !Array.isArray(conversation.participants)) {
+      return 'U';
+    }
+    
+    const otherParticipant = conversation.participants.find(p => p.id !== currentUserId);
+    if (!otherParticipant) {
+      return 'U';
+    }
+    
+    if (otherParticipant.role === 'student') {
+      // Check student relationship first
+      if (otherParticipant.student) {
+        const firstName = otherParticipant.student.firstName || '';
+        const lastName = otherParticipant.student.lastName || '';
+        if (firstName && lastName) {
+          return `${firstName[0]}${lastName[0]}`.toUpperCase();
+        }
+        if (firstName) {
+          return firstName[0].toUpperCase();
+        }
+      }
+      
+      // Fallback to direct firstName/lastName on participant
+      const firstName = otherParticipant.firstName || '';
+      const lastName = otherParticipant.lastName || '';
+      if (firstName && lastName) {
+        return `${firstName[0]}${lastName[0]}`.toUpperCase();
+      }
+      if (firstName) {
+        return firstName[0].toUpperCase();
+      }
+      
+      return 'S';
+    } else if (otherParticipant.role === 'business') {
+      const businessName = otherParticipant.business?.businessName;
+      if (businessName) {
+        return businessName[0].toUpperCase();
+      }
+      return 'B';
+    }
+    
+    return 'U';
+  };
+
+  const getParticipantProfileImage = (conversation: Conversation, currentUserId: string): string | null => {
+    if (!conversation.participants || !Array.isArray(conversation.participants)) {
+      return null;
+    }
+    
+    const otherParticipant = conversation.participants.find(p => p.id !== currentUserId);
+    if (!otherParticipant) {
+      return null;
+    }
+    
+    // Debug logging
+    if (__DEV__) {
+      console.log('Participant data:', {
+        id: otherParticipant.id,
+        role: otherParticipant.role,
+        student: otherParticipant.student,
+        business: otherParticipant.business,
+        hasStudentProfileImage: !!otherParticipant.student?.profileImage,
+        hasBusinessLogo: !!otherParticipant.business?.logo,
+      });
+    }
+    
+    // Check if participant has a student record with profileImage
+    if (otherParticipant.role === 'student' && otherParticipant.student?.profileImage) {
+      return otherParticipant.student.profileImage;
+    }
+    
+    // For businesses, check if they have a logo
+    if (otherParticipant.role === 'business' && otherParticipant.business?.logo) {
+      return otherParticipant.business.logo;
+    }
+    
+    return null;
+  };
+
+  const formatTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffMinutes = Math.floor(diffTime / (1000 * 60));
+    const diffHours = Math.floor(diffTime / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffMinutes < 1) return 'Just now';
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays === 1) return 'Yesterday';
+    if (diffDays < 7) return `${diffDays} days ago`;
+    
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const getFileUrl = (filePath: string) => {
+    if (!filePath) return '';
+    if (filePath.startsWith('http://') || filePath.startsWith('https://')) return filePath;
+    
+    const apiBaseUrl = process.env.API_BASE_URL || 'https://web-production-11221.up.railway.app';
+    let cleanPath = filePath;
+    
+    // Remove leading slash if present
+    if (cleanPath.startsWith('/')) {
+      cleanPath = cleanPath.substring(1);
+    }
+    
+    // If path already includes uploads/, use it as is
+    if (cleanPath.startsWith('uploads/')) {
+      return `${apiBaseUrl}/${cleanPath}`;
+    }
+    
+    // Default to profiles directory
+    return `${apiBaseUrl}/uploads/profiles/${cleanPath}`;
+  };
+
+  const parseMessageContent = (content: string) => {
+    const talentMatch = content.match(/\[About talent:\s*(.+?)\]/);
+    if (talentMatch) {
+      const talentTitle = talentMatch[1].trim();
+      const messageContent = content.replace(/\[About talent:.+?\]\n*\n*/g, '').trim();
+      return { talentTitle, messageContent };
+    }
+    return { talentTitle: null, messageContent: content };
+  };
+
+  const ConversationCard = React.memo(({ conversation }: { conversation: Conversation }) => {
+    const otherParticipant = getOtherParticipant(conversation);
+    const participantName = getParticipantName(conversation, user?.id || '');
+    const participantInitials = getParticipantInitials(conversation, user?.id || '');
+    const profileImage = getParticipantProfileImage(conversation, user?.id || '');
+    const lastMessage = conversation.lastMessage;
+    const [imageError, setImageError] = useState(false);
+
+    // Parse message content for talent context
+    const messageParse = lastMessage ? parseMessageContent(lastMessage.content) : null;
+
+    // Check if conversation has unread messages (last message not from current user)
+    const hasUnreadMessage = lastMessage && (
+      lastMessage.senderId !== user?.id && 
+      lastMessage.sender?.id !== user?.id
+    );
+
+    // Debug logging
+    if (__DEV__ && profileImage) {
+      console.log(`Profile image for ${participantName}:`, profileImage, 'Full URL:', getFileUrl(profileImage));
+    }
+
+    return (
+      <TouchableOpacity
+        style={[
+          styles.conversationCard,
+          hasUnreadMessage && styles.conversationCardUnread
+        ]}
+        onPress={() => {
+          openChat(conversation);
+        }}
+        activeOpacity={0.7}
+      >
+        <View style={styles.conversationHeader}>
+          <View style={styles.avatarContainer}>
+            <View style={styles.avatar}>
+              {profileImage && !imageError ? (
+                <Image
+                  source={{ uri: getFileUrl(profileImage) }}
+                  style={styles.avatarImage}
+                  onError={() => setImageError(true)}
+                  resizeMode="cover"
+                />
+              ) : (
+                <Text style={styles.avatarText}>{participantInitials}</Text>
+              )}
+            </View>
+          </View>
+          <View style={styles.conversationInfo}>
+            <Text 
+              style={[
+                styles.participantName,
+                hasUnreadMessage && styles.participantNameUnread
+              ]} 
+              numberOfLines={1}
+            >
+              {participantName}
+            </Text>
+            {lastMessage ? (
+              <View style={styles.messagePreviewContainer}>
+                {messageParse?.talentTitle && (
+                  <View style={styles.talentBadge}>
+                    <Ionicons name="star" size={12} color="#0f6e56" />
+                    <Text style={styles.talentBadgeText} numberOfLines={1}>
+                      {messageParse.talentTitle}
+                    </Text>
+                  </View>
+                )}
+                {messageParse?.messageContent ? (
+                  <Text 
+                    style={[
+                      styles.lastMessage,
+                      hasUnreadMessage && styles.lastMessageUnread
+                    ]} 
+                    numberOfLines={messageParse.talentTitle ? 1 : 2}
+                  >
+                    {messageParse.messageContent}
+                  </Text>
+                ) : null}
+              </View>
+            ) : (
+              <Text style={styles.lastMessage} numberOfLines={1}>
+                Click to start messaging
+              </Text>
+            )}
+          </View>
+          <View style={styles.conversationMeta}>
+            {(lastMessage || conversation.updatedAt) && (
+              <Text 
+                style={[
+                  styles.lastMessageTime,
+                  hasUnreadMessage && styles.lastMessageTimeUnread
+                ]}
+              >
+                {formatTime(lastMessage?.createdAt || conversation.updatedAt)}
+              </Text>
+            )}
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  });
+
+  const renderConversationCard = ({ item: conversation }: { item: Conversation }) => (
+    <ConversationCard conversation={conversation} key={conversation.id} />
+  );
+
+  const renderMessage = ({ item: message }: { item: Message }) => {
+    if (!message || !message.id) {
+      console.warn('Invalid message item:', message);
+      return null;
+    }
+
+    const isMyMessage = message.senderId === user?.id;
+    const messageContent = message.content || '';
+    
+    // Parse message content for talent context
+    const parsed = parseMessageContent(messageContent);
+
+    return (
+      <View style={[
+        styles.messageContainer,
+        isMyMessage ? styles.myMessage : styles.otherMessage
+      ]}>
+        <View style={[
+          styles.messageBubble,
+          isMyMessage ? styles.myMessageBubble : styles.otherMessageBubble
+        ]}>
+          {parsed.talentTitle && (
+            <View style={styles.messageTalentBadge}>
+              <Ionicons name="star" size={12} color={isMyMessage ? COLORS.white : COLORS.maroon} />
+              <Text style={[
+                styles.messageTalentBadgeText,
+                isMyMessage ? styles.messageTalentBadgeTextMy : styles.messageTalentBadgeTextOther
+              ]}>
+                {parsed.talentTitle}
+              </Text>
+            </View>
+          )}
+          <Text style={[
+            styles.messageText,
+            isMyMessage ? styles.myMessageText : styles.otherMessageText
+          ]}>
+            {parsed.messageContent || messageContent}
+          </Text>
+          <Text style={[
+            styles.messageTime,
+            isMyMessage ? styles.myMessageTime : styles.otherMessageTime
+          ]}>
+            {formatTime(message.createdAt)}
+          </Text>
+        </View>
+      </View>
+    );
+  };
+
+  const renderChatModal = () => (
+    <Modal
+      visible={showChatModal}
+      animationType="slide"
+      onRequestClose={() => setShowChatModal(false)}
+    >
+      <LinearGradient
+        colors={['#FAFBFC', '#FFFFFF', '#F5F7FA']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={styles.chatContainer}
+      >
+        {/* Chat Header */}
+        <View style={styles.chatHeader}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => setShowChatModal(false)}
+          >
+            <Ionicons name="arrow-back" size={24} color={COLORS.maroon} />
+          </TouchableOpacity>
+          <View style={styles.chatHeaderInfo}>
+            {selectedConversation && (() => {
+              const participantName = getParticipantName(selectedConversation, user?.id || '');
+              const profileImage = getParticipantProfileImage(selectedConversation, user?.id || '');
+              const initials = getParticipantInitials(selectedConversation, user?.id || '');
+              
+              return (
+                <>
+                  <View style={styles.chatHeaderAvatar}>
+                    {profileImage && !chatHeaderImageError ? (
+                      <Image
+                        source={{ uri: getFileUrl(profileImage) }}
+                        style={styles.chatHeaderAvatarImage}
+                        onError={() => {
+                          console.log('Profile image error:', profileImage);
+                          setChatHeaderImageError(true);
+                        }}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <View style={styles.chatHeaderAvatarFallback}>
+                        <Text style={styles.chatHeaderAvatarText}>{initials}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.chatHeaderText}>
+                    <Text style={styles.chatHeaderName} numberOfLines={1}>
+                      {participantName}
+                    </Text>
+                    <Text style={styles.chatHeaderSubtitle}>Active now</Text>
+                  </View>
+                </>
+              );
+            })()}
+          </View>
+          <TouchableOpacity
+            style={styles.refreshMessagesButton}
+            onPress={async () => {
+              if (selectedConversation?.id && user?.id) {
+                console.log('Manual refresh: Fetching messages for conversation:', selectedConversation.id);
+                setChatLoadError(null);
+                try {
+                  // Try Redux first
+                  try {
+                    const result = await dispatch(fetchMessages(selectedConversation.id)).unwrap();
+                    console.log('Manual refresh (Redux): Messages fetched, count:', result.messages?.length || 0);
+                    
+                    if (Array.isArray(result.messages) && result.messages.length > 0) {
+                      setLocalMessages(result.messages);
+                    }
+                  } catch (reduxError: any) {
+                    console.warn('Manual refresh Redux failed, trying direct API:', reduxError);
+                    
+                    // Fallback: Direct API call
+                    const directMessages = await apiService.getMessages(selectedConversation.id, user.id);
+                    console.log('Manual refresh (Direct API): Messages fetched, count:', directMessages.length);
+                    
+                    if (Array.isArray(directMessages)) {
+                      setLocalMessages(directMessages);
+                    }
+                  }
+                  
+                  // Force re-render
+                  setMessagesKey(prev => prev + 1);
+                  setTimeout(() => {
+                    messagesListRef.current?.scrollToEnd({ animated: false });
+                  }, 300);
+                } catch (error: any) {
+                  console.error('Manual refresh failed:', error);
+                  setChatLoadError('Failed to refresh messages');
+                }
+              }
+            }}
+          >
+            <Ionicons name="refresh" size={20} color={COLORS.maroon} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Messages */}
+        {chatLoadError ? (
+          <View style={styles.emptyContainer}>
+            <Ionicons name="alert-circle" size={48} color="#d1d5db" />
+            <Text style={styles.emptyText}>{chatLoadError}</Text>
+            <TouchableOpacity
+              style={styles.retryButton}
+              onPress={async () => {
+                if (selectedConversation) {
+                  setChatLoadError(null);
+                  try {
+                    await dispatch(fetchMessages(selectedConversation.id)).unwrap();
+                  } catch (error: any) {
+                    setChatLoadError('Failed to load messages');
+                  }
+                }
+              }}
+            >
+              <Text style={styles.retryButtonText}>Retry</Text>
+            </TouchableOpacity>
+          </View>
+        ) : (
+          (() => {
+            if (!selectedConversation) {
+              return (
+                <View style={styles.emptyMessagesContainer}>
+                  <Text style={styles.emptyMessagesText}>Select a conversation</Text>
+                </View>
+              );
+            }
+
+            // Use the direct selector for fresh data, fallback to local messages
+            const conversationMessages = selectedConversationMessages.length > 0 
+              ? selectedConversationMessages 
+              : localMessages;
+            console.log('=== MESSAGE RENDERING DEBUG ===');
+            console.log('Selected conversation ID:', selectedConversation.id);
+            console.log('Current user ID:', user?.id);
+            console.log('Messages object keys:', Object.keys(messages));
+            console.log('Direct selector messages:', selectedConversationMessages);
+            console.log('Local messages:', localMessages);
+            console.log('Using messages:', conversationMessages);
+            console.log('Is array?', Array.isArray(conversationMessages));
+            console.log('Message count:', conversationMessages?.length || 0);
+            
+            // Ensure we have an array - use the direct selector result or local fallback
+            const messagesArray = Array.isArray(conversationMessages) 
+              ? conversationMessages 
+              : [];
+            
+            console.log('Messages array after normalization:', messagesArray.length);
+            
+            // Validate message structure
+            if (messagesArray.length > 0) {
+              console.log('First message structure:', {
+                id: messagesArray[0].id,
+                content: messagesArray[0].content?.substring(0, 50),
+                senderId: messagesArray[0].senderId,
+                createdAt: messagesArray[0].createdAt
+              });
+            }
+            
+            const sortedMessages = messagesArray.slice().sort((a, b) => {
+              const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+              const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+              return dateA - dateB; // Sort ascending (oldest first)
+            });
+            
+            console.log('Sorted messages count:', sortedMessages.length);
+            if (sortedMessages.length > 0) {
+              console.log('First message:', sortedMessages[0]);
+              console.log('Last message:', sortedMessages[sortedMessages.length - 1]);
+            }
+            console.log('==============================');
+            
+            return (
+              <FlatList
+                ref={messagesListRef}
+                data={sortedMessages}
+                renderItem={renderMessage}
+                keyExtractor={(item, index) => item.id || `message-${index}`}
+                key={`messages-${selectedConversation.id}-${messagesKey}-${sortedMessages.length}`} // Force re-render with key
+                style={styles.messagesList}
+                showsVerticalScrollIndicator={false}
+                contentContainerStyle={[
+                  styles.messagesListContent,
+                  sortedMessages.length === 0 && styles.messagesListContentEmpty
+                ]}
+                ListEmptyComponent={
+                  <View style={styles.emptyMessagesContainer}>
+                    <Ionicons name="chatbubble-outline" size={64} color="#d1d5db" />
+                    <Text style={styles.emptyMessagesText}>No messages yet</Text>
+                    <Text style={styles.emptyMessagesSubtext}>Start the conversation!</Text>
+                    {isLoading && (
+                      <View style={{ marginTop: 16 }}>
+                        <ActivityIndicator size="small" color={COLORS.maroon} />
+                        <Text style={styles.emptyMessagesSubtext}>Loading messages...</Text>
+                      </View>
+                    )}
+                  </View>
+                }
+                onContentSizeChange={() => {
+                  // Auto-scroll to bottom when content size changes
+                  if (sortedMessages.length > 0) {
+                    setTimeout(() => {
+                      messagesListRef.current?.scrollToEnd({ animated: false });
+                    }, 100);
+                  }
+                }}
+                onLayout={() => {
+                  // Scroll to bottom on initial layout if messages exist
+                  if (sortedMessages.length > 0) {
+                    setTimeout(() => {
+                      messagesListRef.current?.scrollToEnd({ animated: false });
+                    }, 200);
+                  }
+                }}
+                extraData={`${messagesKey}-${sortedMessages.length}-${selectedConversation.id}`} // Force re-render when messages change
+                removeClippedSubviews={false} // Ensure all messages are rendered
+              />
+            );
+          })()
+        )}
+
+        {/* Message Input */}
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={[styles.inputContainer, { paddingBottom: Math.max(24, insets.bottom + 8) }]}
+        >
+          <View style={styles.inputWrapper}>
+            <TextInput
+              style={styles.messageInput}
+              placeholder="Type a message..."
+              value={newMessage}
+              onChangeText={setNewMessage}
+              multiline
+              maxLength={500}
+            />
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                (!newMessage.trim() || isSending) && styles.sendButtonDisabled
+              ]}
+              onPress={handleSendMessage}
+              disabled={!newMessage.trim() || isSending}
+            >
+              {isSending ? (
+                <ActivityIndicator size="small" color={COLORS.white} />
+              ) : (
+                <Ionicons name="send" size={20} color={COLORS.white} />
+              )}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </LinearGradient>
+    </Modal>
+  );
+
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <DashboardHeader
+          title="Messages"
+          subtitle="Error occurred"
+        />
+        
+        <View style={styles.errorContainer}>
+          <Ionicons name="alert-circle" size={64} color={COLORS.redAccent} />
+          <Text style={styles.errorText}>Failed to load conversations</Text>
+          <Text style={styles.errorSubtext}>{error}</Text>
+          
+          <TouchableOpacity
+            style={styles.createConversationButton}
+            onPress={() => {
+              console.log('Retrying conversation fetch...');
+              dispatch(fetchConversations());
+            }}
+          >
+            <Text style={styles.createConversationButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  // Don't render messages screen if user is not logged in
+  if (!user?.id) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.header}>
+          <Text style={styles.title}>Messages</Text>
+          <Text style={styles.subtitle}>Please log in to view messages</Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <DashboardHeader
+        badge="Inbox"
+        title="Messages"
+        subtitle="Connect with students and businesses"
+      />
+
+      {/* Search Bar */}
+      <View style={styles.searchContainer}>
+        <View style={styles.searchInputContainer}>
+          <Ionicons name="search" size={20} color="#6b7280" style={styles.searchIcon} />
+          <TextInput
+            placeholder="Search conversations or users..."
+            placeholderTextColor="#9ca3af"
+            value={searchTerm}
+            onChangeText={(text) => {
+              setSearchTerm(text);
+              if (text.trim() && allUsers.length === 0) {
+                loadAllUsers();
+              }
+            }}
+            onFocus={() => {
+              if (allUsers.length === 0) {
+                loadAllUsers();
+              }
+            }}
+            style={styles.searchInput}
+          />
+          {searchTerm.length > 0 && (
+            <TouchableOpacity
+              onPress={() => {
+                setSearchTerm('');
+                setFilteredUsers([]);
+                setFilteredConversations([]);
+              }}
+              style={styles.clearSearchButton}
+            >
+              <Ionicons name="close-circle" size={20} color="#9ca3af" />
+            </TouchableOpacity>
+          )}
+        </View>
+      </View>
+
+      {/* Search Results */}
+      {searchTerm.trim() && (
+        <View style={styles.searchResults}>
+          {/* Filtered Conversations */}
+          {filteredConversations.length > 0 && (
+            <View style={styles.searchSection}>
+              <Text style={styles.searchSectionTitle}>
+                Conversations ({filteredConversations.length})
+              </Text>
+              <FlatList
+                data={filteredConversations}
+                keyExtractor={item => item.id}
+                style={styles.searchResultsList}
+                scrollEnabled={false}
+                renderItem={({ item }) => (
+                  <ConversationCard conversation={item} />
+                )}
+              />
+            </View>
+          )}
+          
+          {/* Filtered Users */}
+          {filteredUsers.length > 0 && (
+            <View style={styles.searchSection}>
+              <Text style={styles.searchSectionTitle}>
+                Users ({filteredUsers.length})
+              </Text>
+              <FlatList
+                data={filteredUsers}
+                keyExtractor={item => `${item.role}-${item.id}`}
+                style={styles.searchResultsList}
+                scrollEnabled={false}
+                renderItem={({ item }) => (
+                  <TouchableOpacity
+                    style={styles.searchResultItem}
+                    onPress={async () => {
+                      setSearchTerm('');
+                      setFilteredUsers([]);
+                      setFilteredConversations([]);
+                      await openChat(null, item.id);
+                    }}
+                  >
+                    <View style={styles.searchResultAvatar}>
+                      <Text style={styles.searchResultAvatarText}>
+                        {item.firstName ? item.firstName[0].toUpperCase() : item.email?.[0].toUpperCase() || 'U'}
+                      </Text>
+                    </View>
+                    <View style={styles.searchResultInfo}>
+                      <Text style={styles.searchResultName} numberOfLines={1}>
+                        {item.firstName && item.lastName 
+                          ? `${item.firstName} ${item.lastName}`
+                          : item.email || 'Unknown User'
+                        }
+                      </Text>
+                      <Text style={styles.searchResultEmail} numberOfLines={1}>{item.email}</Text>
+                      <View style={styles.searchResultRoleBadge}>
+                        <Text style={styles.searchResultRole}>{item.role}</Text>
+                      </View>
+                    </View>
+                    <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+                  </TouchableOpacity>
+                )}
+              />
+            </View>
+          )}
+          
+          {/* No Results */}
+          {searchTerm.trim() && filteredConversations.length === 0 && filteredUsers.length === 0 && (
+            <View style={styles.noSearchResults}>
+              <Ionicons name="search-outline" size={48} color="#d1d5db" />
+              <Text style={styles.noSearchResultsText}>No results found</Text>
+              <Text style={styles.noSearchResultsSubtext}>
+                Try searching by name or email
+              </Text>
+            </View>
+          )}
+        </View>
+      )}
+
+      {/* Conversations List */}
+      {!searchTerm.trim() && (isLoading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.maroon} />
+          <Text style={styles.loadingText}>Loading conversations...</Text>
+        </View>
+      ) : !Array.isArray(conversations) || conversations.length === 0 ? (
+        <View style={styles.emptyContainer}>
+          <Ionicons name="chatbubble-outline" size={64} color="#d1d5db" />
+          <Text style={styles.emptyText}>No messages</Text>
+        </View>
+      ) : (
+        <FlatList
+            data={deduplicateConversations(Array.isArray(conversations) ? conversations : [])}
+            renderItem={renderConversationCard}
+            keyExtractor={(item) => item.id}
+            style={styles.conversationsList}
+            contentContainerStyle={[
+              Array.isArray(conversations) && conversations.length === 0 ? styles.emptyListContainer : styles.conversationsListContent,
+              { paddingBottom: tabBarHeight + 20 },
+            ]}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
+            }
+            showsVerticalScrollIndicator={false}
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <Ionicons name="chatbubble-outline" size={64} color="#d1d5db" />
+                <Text style={styles.emptyText}>No messages</Text>
+              </View>
+            }
+          />
+      ))}
+
+      {renderChatModal()}
+    </View>
+  );
+};
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: COLORS.mint50,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#FFFFFF',
+    marginBottom: 2,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#FFFFFF',
+    opacity: 0.9,
+  },
+  refreshButton: {
+    padding: 8,
+  },
+  conversationsList: {
+    flex: 1,
+  },
+  conversationsListContent: {
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  conversationCard: {
+    backgroundColor: COLORS.white,
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 10,
+    marginHorizontal: DASHBOARD_PADDING_H,
+    shadowColor: COLORS.teal950,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 2,
+    borderWidth: 1,
+    borderColor: 'rgba(4, 52, 44, 0.06)',
+  },
+  conversationCardUnread: {
+    backgroundColor: COLORS.white,
+    borderColor: COLORS.teal600,
+    borderWidth: 1.5,
+  },
+  conversationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  avatarContainer: {
+    marginRight: 12,
+  },
+  avatar: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: COLORS.teal700,
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: COLORS.mint50,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 28,
+  },
+  avatarText: {
+    color: COLORS.white,
+    fontSize: 20,
+    fontWeight: '600',
+  },
+  conversationInfo: {
+    flex: 1,
+    marginLeft: 12,
+    justifyContent: 'center',
+  },
+  participantName: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  participantNameUnread: {
+    fontWeight: '700',
+    color: '#1F2937',
+  },
+  messagePreviewContainer: {
+    gap: 4,
+  },
+  talentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: COLORS.mint50,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: 'rgba(15, 110, 86, 0.2)',
+    marginBottom: 2,
+  },
+  talentBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#0f6e56',
+    marginLeft: 4,
+    maxWidth: 150,
+  },
+  lastMessage: {
+    fontSize: 14,
+    color: '#6B7280',
+    lineHeight: 20,
+  },
+  lastMessageUnread: {
+    color: '#374151',
+    fontWeight: '500',
+  },
+  conversationMeta: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  lastMessageTime: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontWeight: '500',
+  },
+  lastMessageTimeUnread: {
+    color: '#0f6e56',
+    fontWeight: '600',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: COLORS.redAccent,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: COLORS.gray,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  emptyText: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: '#6b7280',
+    marginTop: 16,
+  },
+  chatContainer: {
+    flex: 1,
+  },
+  chatHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: DASHBOARD_PADDING_H,
+    paddingBottom: 16,
+    paddingTop: 50,
+    backgroundColor: COLORS.white,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  backButton: {
+    marginRight: 12,
+  },
+  chatHeaderInfo: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  chatHeaderName: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 2,
+  },
+  chatHeaderSubtitle: {
+    fontSize: 13,
+    color: '#6B7280',
+    fontWeight: '500',
+  },
+  messagesList: {
+    flex: 1,
+    paddingHorizontal: DASHBOARD_PADDING_H,
+  },
+  messagesListContent: {
+    flexGrow: 1,
+    paddingVertical: 16,
+  },
+  messagesListContentEmpty: {
+    flexGrow: 1,
+    justifyContent: 'center',
+  },
+  emptyMessagesContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  emptyMessagesText: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#6b7280',
+    marginTop: 16,
+  },
+  emptyMessagesSubtext: {
+    fontSize: 14,
+    color: '#9ca3af',
+    marginTop: 8,
+  },
+  retryButton: {
+    marginTop: 16,
+    backgroundColor: COLORS.maroon,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: COLORS.white,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  messageContainer: {
+    marginVertical: 4,
+  },
+  myMessage: {
+    alignItems: 'flex-end',
+  },
+  otherMessage: {
+    alignItems: 'flex-start',
+  },
+  messageBubble: {
+    maxWidth: '80%',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 20,
+  },
+  myMessageBubble: {
+    backgroundColor: COLORS.maroon,
+  },
+  otherMessageBubble: {
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  messageText: {
+    fontSize: 16,
+    lineHeight: 20,
+  },
+  myMessageText: {
+    color: COLORS.white,
+  },
+  otherMessageText: {
+    color: '#1F2937',
+  },
+  messageTime: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+  myMessageTime: {
+    color: COLORS.white,
+    opacity: 0.8,
+  },
+  otherMessageTime: {
+    color: COLORS.gray,
+  },
+  messageTalentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  messageTalentBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    marginLeft: 4,
+  },
+  messageTalentBadgeTextMy: {
+    color: COLORS.white,
+  },
+  messageTalentBadgeTextOther: {
+    color: COLORS.teal700,
+  },
+  inputContainer: {
+    backgroundColor: COLORS.white,
+    borderTopWidth: 1,
+    borderTopColor: '#E5E7EB',
+    paddingTop: 16,
+    paddingHorizontal: DASHBOARD_PADDING_H,
+    paddingBottom: Platform.OS === 'ios' ? 32 : 24,
+  },
+  inputWrapper: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    gap: 12,
+    paddingBottom: Platform.OS === 'ios' ? 30 : 0,
+  },
+  messageInput: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    maxHeight: 100,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  sendButton: {
+    backgroundColor: COLORS.maroon,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#9CA3AF',
+  },
+  searchContainer: {
+    marginHorizontal: DASHBOARD_PADDING_H,
+    marginTop: -12,
+    marginBottom: 12,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(4, 52, 44, 0.08)',
+    shadowColor: COLORS.teal950,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: '#1f2937',
+    padding: 0,
+  },
+  clearSearchButton: {
+    marginLeft: 8,
+    padding: 4,
+  },
+  searchResults: {
+    paddingHorizontal: DASHBOARD_PADDING_H,
+    marginBottom: 12,
+    maxHeight: height * 0.6,
+  },
+  searchSection: {
+    marginBottom: 16,
+  },
+  searchSectionTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 10,
+    paddingHorizontal: 4,
+  },
+  searchResultsList: {
+    maxHeight: 300,
+  },
+  noSearchResults: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  noSearchResultsText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#374151',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  noSearchResultsSubtext: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  searchResultItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.white,
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#f3f4f6',
+  },
+  searchResultAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.maroon,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  searchResultAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
+  },
+  searchResultAvatarText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  searchResultInfo: {
+    flex: 1,
+  },
+  searchResultName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1F2937',
+    marginBottom: 2,
+  },
+  searchResultEmail: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  searchResultRoleBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#f3f4f6',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  searchResultRole: {
+    fontSize: 11,
+    color: '#6b7280',
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  errorAlert: {
+    marginHorizontal: DASHBOARD_PADDING_H,
+    marginBottom: 10,
+  },
+  loadingText: {
+    marginTop: 10,
+    color: COLORS.gray,
+  },
+  chatHeaderAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.maroon,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: '#F3F4F6',
+  },
+  chatHeaderAvatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
+  },
+  chatHeaderAvatarFallback: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 22,
+    backgroundColor: COLORS.maroon,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  chatHeaderAvatarText: {
+    color: COLORS.white,
+    fontSize: 18,
+    fontWeight: '600',
+  },
+  chatHeaderText: {
+    flex: 1,
+  },
+  refreshMessagesButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  debugContainer: {
+    padding: 10,
+    backgroundColor: COLORS.lightGray,
+    borderRadius: 8,
+    marginHorizontal: DASHBOARD_PADDING_H,
+    marginBottom: 10,
+  },
+  createConversationButton: {
+    marginTop: 20,
+    backgroundColor: COLORS.maroon,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+  },
+  createConversationButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  apiTestButton: {
+    marginTop: 10,
+    backgroundColor: COLORS.teal700,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+  },
+  apiTestButtonText: {
+    color: COLORS.white,
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
+  },
+  headerGradient: {
+    paddingTop: 35,
+    paddingBottom: 10,
+    marginBottom: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  addButton: {
+    padding: 8,
+  },
+  headerLeft: {
+    flex: 1,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerButton: {
+    padding: 8,
+  },
+  emptyListContainer: {
+    flexGrow: 1,
+  },
+});
+
+export default MessagesScreen; 

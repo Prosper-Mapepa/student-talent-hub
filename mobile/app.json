@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "VeriTalent",
+    "slug": "StudentTalentHubMobile",
+    "version": "1.0.7",
+    "orientation": "portrait",
+    "icon": "./assets/ss.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/ss.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#04342c"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.prospermap.StudentTalentHubMobile",
+      "buildNumber": "7"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/ss.png",
+        "backgroundColor": "#04342c"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.prospermap.StudentTalentHubMobile",
+      "versionCode": 7
+    },
+    "web": {
+      "favicon": "./assets/ss.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6c631a05-9ba5-4202-ad44-0348f65f74ea"
+      },
+      "apiBaseUrl": "https://web-production-11221.up.railway.app"
+    },
+    "plugins": [
+      "expo-av"
+    ]
+  }
+}

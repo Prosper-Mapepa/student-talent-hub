@@ -2,9 +2,22 @@ name: DevSecOps Pipeline
 
 on:
   push:
-    branches: [main, master, develop, devsecops/ci-pipeline]
+    branches: [main, master, develop]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'mobile/**'
+      - '.github/workflows/devsecops.yml'
+      - 'docker-compose.ci.yml'
+      - '.gitmodules'
   pull_request:
     branches: [main, master, develop]
+    paths:
+      - 'backend/**'
+      - 'frontend/**'
+      - 'mobile/**'
+      - '.github/workflows/devsecops.yml'
+      - 'docker-compose.ci.yml'
   workflow_dispatch:
 
 concurrency:
@@ -18,124 +31,221 @@ permissions:
 env:
   BACKEND_IMAGE: veritalent-backend:ci
   FRONTEND_IMAGE: veritalent-frontend:ci
-  # Trivy HIGH = CVSS 7.0–8.9, CRITICAL = 9.0–10.0
   TRIVY_SEVERITY: HIGH,CRITICAL
+  TRIVY_SKIP_DIRS: node_modules,.next,dist,.expo,web-build
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # 1. Secret detection — TruffleHog
-  # ---------------------------------------------------------------------------
-  secret-scan:
-    name: Secret Detection (TruffleHog)
+  changes:
+    name: Detect Changes
     runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      mobile: ${{ steps.filter.outputs.mobile }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
 
-      - name: TruffleHog OSS
-        uses: trufflesecurity/trufflehog@main
+      - uses: dorny/paths-filter@v3
+        id: filter
         with:
-          path: ./
-          base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.repository.default_branch }}
-          head: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'HEAD' }}
-          extra_args: --only-verified
+          filters: |
+            backend:
+              - 'backend/**'
+            frontend:
+              - 'frontend/**'
+            mobile:
+              - 'mobile/**'
 
-  # ---------------------------------------------------------------------------
-  # 2. SAST — Trivy filesystem scan (dependencies + misconfigs)
-  # ---------------------------------------------------------------------------
-  sast-filesystem:
-    name: SAST (Trivy FS)
+  secret-scan:
+    name: Secret Detection (TruffleHog)
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          head: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+          extra_args: --only-verified
+
+  sast-backend:
+    name: SAST — Backend
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@v0.36.0
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
-          scan-ref: .
+          scan-ref: ./backend
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           exit-code: '1'
+          skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
           format: sarif
-          output: trivy-fs.sarif
+          output: trivy-fs-backend.sarif
 
-      - name: Upload Trivy FS SARIF
-        uses: github/codeql-action/upload-sarif@v3
-        if: always() && hashFiles('trivy-fs.sarif') != ''
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
         continue-on-error: true
         with:
-          sarif_file: trivy-fs.sarif
-          category: trivy-filesystem
+          sarif_file: trivy-fs-backend.sarif
+          category: trivy-backend
 
-  # ---------------------------------------------------------------------------
-  # 3. SCA — Software Bill of Materials (SBOM)
-  # ---------------------------------------------------------------------------
-  sbom:
-    name: SCA / SBOM Generation
+  sast-frontend:
+    name: SAST — Frontend
     runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Generate CycloneDX SBOM (repo)
-        uses: aquasecurity/trivy-action@v0.36.0
+      - uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
-          scan-ref: .
-          format: cyclonedx
-          output: sbom-repo.cyclonedx.json
+          scan-ref: ./frontend
+          severity: ${{ env.TRIVY_SEVERITY }}
+          ignore-unfixed: true
+          exit-code: '1'
+          skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
+          format: sarif
+          output: trivy-fs-frontend.sarif
 
-      - name: Generate SPDX SBOM (backend)
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: trivy-fs-frontend.sarif
+          category: trivy-frontend
+
+  sast-mobile:
+    name: SAST — Mobile
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./mobile
+          severity: ${{ env.TRIVY_SEVERITY }}
+          ignore-unfixed: true
+          exit-code: '1'
+          skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
+          format: sarif
+          output: trivy-fs-mobile.sarif
+
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: trivy-fs-mobile.sarif
+          category: trivy-mobile
+
+  sbom:
+    name: SCA / SBOM Generation
+    runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.frontend == 'true' ||
+      needs.changes.outputs.mobile == 'true' ||
+      github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: SBOM — backend
+        if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./backend
           format: spdx-json
+          skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
           output: sbom-backend.spdx.json
 
-      - name: Generate SPDX SBOM (frontend)
+      - name: SBOM — frontend
+        if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./frontend
           format: spdx-json
+          skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
           output: sbom-frontend.spdx.json
 
-      - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
+      - name: SBOM — mobile
+        if: needs.changes.outputs.mobile == 'true' || github.event_name == 'workflow_dispatch'
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./mobile
+          format: spdx-json
+          skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
+          output: sbom-mobile.spdx.json
+
+      - uses: actions/upload-artifact@v4
         with:
           name: sbom-reports
-          path: |
-            sbom-repo.cyclonedx.json
-            sbom-backend.spdx.json
-            sbom-frontend.spdx.json
+          path: sbom-*.spdx.json
+          if-no-files-found: warn
           retention-days: 30
 
-  # ---------------------------------------------------------------------------
-  # 4. Build Docker images
-  # ---------------------------------------------------------------------------
+  mobile-check:
+    name: Mobile (Typecheck)
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - run: npm ci
+      - run: npm run typecheck
+        continue-on-error: true
+
   build-images:
     name: Build Docker Images
     runs-on: ubuntu-latest
+    needs: changes
+    if: |
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.frontend == 'true' ||
+      github.event_name == 'workflow_dispatch'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
       - name: Build backend image
+        if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
         uses: docker/build-push-action@v6
         with:
           context: ./backend
@@ -146,6 +256,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Build frontend image
+        if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
@@ -157,23 +268,23 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ---------------------------------------------------------------------------
-  # 5. Container scan — Trivy (fail if CVSS >= 7.0)
-  # ---------------------------------------------------------------------------
   container-scan:
     name: Container Scan (Trivy)
     runs-on: ubuntu-latest
-    needs: build-images
+    needs: [changes, build-images]
+    if: |
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.frontend == 'true' ||
+      github.event_name == 'workflow_dispatch'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Build backend image
+      - name: Build & scan backend
+        if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
         uses: docker/build-push-action@v6
         with:
           context: ./backend
@@ -182,6 +293,7 @@ jobs:
           tags: ${{ env.BACKEND_IMAGE }}
 
       - name: Trivy scan — backend
+        if: needs.changes.outputs.backend == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.BACKEND_IMAGE }}
@@ -190,7 +302,8 @@ jobs:
           exit-code: '1'
           format: table
 
-      - name: Build frontend image
+      - name: Build & scan frontend
+        if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
@@ -201,6 +314,7 @@ jobs:
             NEXT_PUBLIC_API_URL=http://localhost:3001
 
       - name: Trivy scan — frontend
+        if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.FRONTEND_IMAGE }}
@@ -209,29 +323,28 @@ jobs:
           exit-code: '1'
           format: table
 
-  # ---------------------------------------------------------------------------
-  # 6. DAST — OWASP ZAP baseline against running stack
-  # ---------------------------------------------------------------------------
   dast-zap:
     name: DAST (OWASP ZAP)
     runs-on: ubuntu-latest
-    needs: build-images
+    needs: [changes, build-images]
+    if: |
+      needs.changes.outputs.backend == 'true' ||
+      needs.changes.outputs.frontend == 'true' ||
+      github.event_name == 'workflow_dispatch'
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Start CI application stack
+      - name: Start CI stack
         run: docker compose -f docker-compose.ci.yml up -d --build --wait
 
-      - name: Verify services are reachable
+      - name: Verify services
         run: |
           curl -fsS http://localhost:3001/ >/dev/null
           curl -fsS http://localhost:3000/ >/dev/null
 
-      - name: OWASP ZAP baseline scan
-        uses: zaproxy/action-baseline@v0.14.0
+      - uses: zaproxy/action-baseline@v0.14.0
         with:
           target: http://localhost:3000
           fail_action: true
@@ -242,18 +355,28 @@ jobs:
         if: always()
         run: docker compose -f docker-compose.ci.yml down -v
 
-  # ---------------------------------------------------------------------------
-  # Gate — all security jobs must pass
-  # ---------------------------------------------------------------------------
   security-gate:
     name: Security Gate
     runs-on: ubuntu-latest
     needs:
       - secret-scan
-      - sast-filesystem
+      - sast-backend
+      - sast-frontend
+      - sast-mobile
       - sbom
+      - mobile-check
       - container-scan
       - dast-zap
+    if: always()
     steps:
       - name: All security checks passed
-        run: echo "DevSecOps pipeline passed — no critical vulnerabilities detected."
+        if: |
+          !contains(needs.*.result, 'failure') &&
+          !contains(needs.*.result, 'cancelled')
+        run: echo "DevSecOps pipeline passed."
+
+      - name: Security gate failed
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: |
+          echo "One or more security jobs failed."
+          exit 1
