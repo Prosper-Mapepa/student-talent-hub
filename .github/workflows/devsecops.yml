@@ -56,7 +56,7 @@ jobs:
           submodules: recursive
 
       - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -87,7 +87,7 @@ jobs:
           submodules: recursive
 
       - name: Generate CycloneDX SBOM (repo)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -95,7 +95,7 @@ jobs:
           output: sbom-repo.cyclonedx.json
 
       - name: Generate SPDX SBOM (backend)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./backend
@@ -103,7 +103,7 @@ jobs:
           output: sbom-backend.spdx.json
 
       - name: Generate SPDX SBOM (frontend)
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./frontend
@@ -182,7 +182,7 @@ jobs:
           tags: ${{ env.BACKEND_IMAGE }}
 
       - name: Trivy scan — backend
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.BACKEND_IMAGE }}
           severity: ${{ env.TRIVY_SEVERITY }}
@@ -201,7 +201,7 @@ jobs:
             NEXT_PUBLIC_API_URL=http://localhost:3001
 
       - name: Trivy scan — frontend
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.FRONTEND_IMAGE }}
           severity: ${{ env.TRIVY_SEVERITY }}
