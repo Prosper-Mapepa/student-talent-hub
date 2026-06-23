@@ -381,9 +381,6 @@ const BusinessDashboardScreen: React.FC = () => {
 
   // Handle view profile
   const handleViewProfile = (student: any) => {
-    // Close applications modal first
-    setShowAppsModal(false);
-    
     if (student?.id) {
       // Use requestAnimationFrame to ensure modal closes before navigation
       requestAnimationFrame(() => {
@@ -418,9 +415,6 @@ const BusinessDashboardScreen: React.FC = () => {
     setSelectedStudent(student);
     setMessageText('');
     setShowMessageModal(true);
-    
-    // Close applications modal after opening message modal
-    setShowAppsModal(false);
   };
 
   // Send message to student
@@ -942,13 +936,13 @@ const BusinessDashboardScreen: React.FC = () => {
                       setSelectedStudent(null);
                       setMessageText('');
                     }}
-                    style={styles.modalButton}
+                    style={styles.messageModalButton}
                   >
                     <Text style={styles.modalButtonText}>Cancel</Text>
                   </Button>
                   <Button
                     onPress={sendMessageToStudent}
-                    style={[styles.modalButton, styles.sendButton]}
+                    style={[styles.messageModalButton, styles.sendButton]}
                     disabled={isSendingMessage}
                   >
                     {isSendingMessage ? (
@@ -1551,7 +1545,7 @@ const styles = StyleSheet.create({
     marginBottom: 0,
     minHeight: 120,
   },
-  modalButton: {
+  messageModalButton: {
     flex: 1,
   },
   modalButtonText: {

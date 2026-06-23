@@ -53,10 +53,11 @@ type UserAvatarProps = {
   size?: number;
   imageUri?: string | null;
   style?: StyleProp<ViewStyle>;
+  imageStyle?: StyleProp<ImageStyle>;
 };
 
 /** Profile photo when available, otherwise VeriTalent logo on mint background. */
-export function UserAvatar({ size = 44, imageUri, style }: UserAvatarProps) {
+export function UserAvatar({ size = 44, imageUri, style, imageStyle }: UserAvatarProps) {
   if (imageUri) {
     return (
       <Image
@@ -69,7 +70,7 @@ export function UserAvatar({ size = 44, imageUri, style }: UserAvatarProps) {
             borderWidth: 2,
             borderColor: '#f3f4f6',
           },
-          style,
+          imageStyle,
         ]}
         resizeMode="cover"
       />

@@ -19,7 +19,7 @@ function Button({
       style={[
         styles.button,
         styles[variant],
-        styles[size],
+        size === 'default' ? styles.sizeDefault : styles[size],
         style
       ]}
       {...props}
@@ -98,7 +98,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textDecorationLine: 'underline',
   },
-  default: {
+  sizeDefault: {
     paddingHorizontal: 16,
     paddingVertical: 8,
   },

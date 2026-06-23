@@ -124,9 +124,14 @@ export const createJob = createAsyncThunk(
     requirements: string[];
     responsibilities: string[];
     benefits: string[];
-  }, { rejectWithValue }) => {
+  }, { rejectWithValue, getState }) => {
     try {
-      const job = await apiService.createJob(jobData);
+      const state = getState() as { auth: { user?: { business?: { id: string } } } };
+      const businessId = state.auth.user?.business?.id;
+      if (!businessId) {
+        return rejectWithValue('Business profile is required to post a job');
+      }
+      const job = await apiService.createJob({ ...jobData, businessId });
       return job;
     } catch (error: any) {
       return rejectWithValue(error.response?.data?.message || 'Failed to create job');

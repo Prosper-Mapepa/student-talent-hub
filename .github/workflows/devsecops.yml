@@ -281,7 +281,7 @@ jobs:
           image-ref: ${{ env.BACKEND_IMAGE }}
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
-          vuln-type: library
+          trivy-args: --vuln-type library
           exit-code: '1'
           format: table
 
@@ -303,7 +303,7 @@ jobs:
           image-ref: ${{ env.FRONTEND_IMAGE }}
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
-          vuln-type: library
+          trivy-args: --vuln-type library
           exit-code: '1'
           format: table
 

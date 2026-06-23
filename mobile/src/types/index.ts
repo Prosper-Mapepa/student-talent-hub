@@ -273,9 +273,14 @@ export type RootStackParamList = {
   PrivacyPolicy: undefined;
   TermsConditions: undefined;
   Eula: undefined;
-  MainTabs: undefined;
+  MainTabs: { screen?: keyof MainTabParamList } | undefined;
   JobDetail: { job: Job };
   PostJob: undefined;
+  JobApplications: {
+    jobId: string;
+    jobTitle: string;
+    applications: Application[];
+  };
   StudentProfile: { studentId: string };
   BusinessProfile: { businessId: string };
   TalentDetail: { talent: Talent };

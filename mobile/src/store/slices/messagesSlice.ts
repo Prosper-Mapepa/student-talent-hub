@@ -150,15 +150,7 @@ const messagesSlice = createSlice({
       })
       .addCase(fetchConversations.fulfilled, (state, action) => {
         state.isLoading = false;
-        // Normalize conversations to always be an array
-        if (Array.isArray(action.payload)) {
-          state.conversations = action.payload;
-        } else if (action.payload && typeof action.payload === 'object' && 'data' in action.payload) {
-          // Handle case where response is wrapped in a data property
-          state.conversations = Array.isArray(action.payload.data) ? action.payload.data : [];
-        } else {
-          state.conversations = [];
-        }
+        state.conversations = Array.isArray(action.payload) ? action.payload : [];
         state.error = null;
       })
       .addCase(fetchConversations.rejected, (state, action) => {

@@ -16,6 +16,7 @@
     "lint:frontend": "npm run lint --prefix frontend",
     "lint:backend": "npm run lint --prefix backend",
     "typecheck:mobile": "npm run typecheck --prefix mobile",
+    "test:all": "npm run build:backend && npm run build:frontend && npm run typecheck:mobile",
     "ci:stack": "docker compose -f docker-compose.ci.yml up --build",
     "ci:stack:down": "docker compose -f docker-compose.ci.yml down -v",
     "submodules:init": "git submodule update --init --recursive",
