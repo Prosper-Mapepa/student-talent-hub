@@ -89,7 +89,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Trivy filesystem scan
+      - name: Generate SARIF report
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -97,7 +97,7 @@ jobs:
           scanners: vuln
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
-          exit-code: '1'
+          exit-code: '0'
           skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
           format: sarif
           output: trivy-backend.sarif
@@ -109,6 +109,18 @@ jobs:
           sarif_file: trivy-backend.sarif
           category: trivy-backend
 
+      - name: Fail on HIGH/CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./backend
+          scanners: vuln
+          severity: ${{ env.TRIVY_SEVERITY }}
+          ignore-unfixed: true
+          exit-code: '1'
+          skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
+          format: table
+
   sast-frontend:
     name: SAST — Frontend
     runs-on: ubuntu-latest
@@ -119,7 +131,7 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Trivy filesystem scan
+      - name: Generate SARIF report
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -127,7 +139,7 @@ jobs:
           scanners: vuln
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
-          exit-code: '1'
+          exit-code: '0'
           skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
           format: sarif
           output: trivy-frontend.sarif
@@ -139,6 +151,18 @@ jobs:
           sarif_file: trivy-frontend.sarif
           category: trivy-frontend
 
+      - name: Fail on HIGH/CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./frontend
+          scanners: vuln
+          severity: ${{ env.TRIVY_SEVERITY }}
+          ignore-unfixed: true
+          exit-code: '1'
+          skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
+          format: table
+
   sast-mobile:
     name: SAST — Mobile
     runs-on: ubuntu-latest
@@ -147,7 +171,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Trivy filesystem scan
+      - name: Generate SARIF report
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
@@ -155,7 +179,7 @@ jobs:
           scanners: vuln
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
-          exit-code: '1'
+          exit-code: '0'
           skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
           format: sarif
           output: trivy-mobile.sarif
@@ -166,6 +190,18 @@ jobs:
         with:
           sarif_file: trivy-mobile.sarif
           category: trivy-mobile
+
+      - name: Fail on HIGH/CRITICAL vulnerabilities
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: ./mobile
+          scanners: vuln
+          severity: ${{ env.TRIVY_SEVERITY }}
+          ignore-unfixed: true
+          exit-code: '1'
+          skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
+          format: table
 
   sbom:
     name: SCA / SBOM Generation
