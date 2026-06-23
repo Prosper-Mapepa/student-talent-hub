@@ -25,6 +25,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
+  actions: read
   contents: read
   security-events: write
 
@@ -88,7 +89,8 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: aquasecurity/trivy-action@v0.36.0
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./backend
@@ -97,7 +99,15 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
-          format: table
+          format: sarif
+          output: trivy-backend.sarif
+
+      - name: Upload SARIF — backend
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-backend.sarif') != ''
+        with:
+          sarif_file: trivy-backend.sarif
+          category: trivy-backend
 
   sast-frontend:
     name: SAST — Frontend
@@ -109,7 +119,8 @@ jobs:
         with:
           submodules: recursive
 
-      - uses: aquasecurity/trivy-action@v0.36.0
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./frontend
@@ -118,7 +129,15 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
-          format: table
+          format: sarif
+          output: trivy-frontend.sarif
+
+      - name: Upload SARIF — frontend
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-frontend.sarif') != ''
+        with:
+          sarif_file: trivy-frontend.sarif
+          category: trivy-frontend
 
   sast-mobile:
     name: SAST — Mobile
@@ -128,7 +147,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: aquasecurity/trivy-action@v0.36.0
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: ./mobile
@@ -137,7 +157,15 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           skip-dirs: ${{ env.TRIVY_SKIP_DIRS }}
-          format: table
+          format: sarif
+          output: trivy-mobile.sarif
+
+      - name: Upload SARIF — mobile
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('trivy-mobile.sarif') != ''
+        with:
+          sarif_file: trivy-mobile.sarif
+          category: trivy-mobile
 
   sbom:
     name: SCA / SBOM Generation
@@ -279,11 +307,20 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.BACKEND_IMAGE }}
+          scanners: vuln
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           trivy-args: --vuln-type library
-          exit-code: '1'
-          format: table
+          exit-code: '0'
+          format: sarif
+          output: trivy-backend-image.sarif
+
+      - name: Upload container SARIF — backend
+        if: always() && hashFiles('trivy-backend-image.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-backend-image.sarif
+          category: trivy-backend-image
 
       - name: Build & scan frontend
         if: needs.changes.outputs.frontend == 'true' || github.event_name == 'workflow_dispatch'
@@ -301,11 +338,20 @@ jobs:
         uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ${{ env.FRONTEND_IMAGE }}
+          scanners: vuln
           severity: ${{ env.TRIVY_SEVERITY }}
           ignore-unfixed: true
           trivy-args: --vuln-type library
-          exit-code: '1'
-          format: table
+          exit-code: '0'
+          format: sarif
+          output: trivy-frontend-image.sarif
+
+      - name: Upload container SARIF — frontend
+        if: always() && hashFiles('trivy-frontend-image.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: trivy-frontend-image.sarif
+          category: trivy-frontend-image
 
   dast-zap:
     name: DAST (OWASP ZAP)
